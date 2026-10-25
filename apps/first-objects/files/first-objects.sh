@@ -93,6 +93,10 @@ if [ -z "$group_id" ] || [ "$group_id" = null ]; then
   echo "first-objects: created group $group"
 fi
 
+# A mirror follows GitHub, which may rewrite or delete a default branch. A protected default branch
+# would refuse that push on every run, so the mirror group turns the protection off.
+api PUT "/groups/$group_id" --data-urlencode default_branch_protection=0 >/dev/null || fail "cannot update the group $group"
+
 if ! have_secret "$GITLAB_NAMESPACE" gitlab-mirror; then
   expires="$(date -u -d '+364 days' +%Y-%m-%d)"
   mirror_token="$(api POST "/groups/$group_id/access_tokens" \

@@ -1,5 +1,7 @@
 # One replica with the Recreate strategy: the loop in loop.sh is the only process that syncs,
 # so two runs never overlap. The liveness probe restarts the pod if the loop stops.
+{{- /* One run may take every repository its full timeout plus 10 seconds, so the deadline grows with the list. */ -}}
+{{- $runDeadline := mul (len .Values.repos) (add .Values.repoTimeoutSeconds 10) | max .Values.minRunDeadlineSeconds }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,7 +46,7 @@ spec:
             - name: INTERVAL
               value: {{ .Values.intervalSeconds | quote }}
             - name: RUN_DEADLINE
-              value: {{ .Values.runDeadlineSeconds | quote }}
+              value: {{ $runDeadline | quote }}
             - name: SRC_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -61,8 +63,8 @@ spec:
               command:
                 - bash
                 - -c
-                - test $(( $(date +%s) - $(stat -c %Y /tmp/heartbeat 2>/dev/null || echo 0) )) -lt {{ add .Values.intervalSeconds .Values.runDeadlineSeconds 60 }}
-            initialDelaySeconds: {{ add .Values.runDeadlineSeconds 60 }}
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/heartbeat 2>/dev/null || echo 0) )) -lt {{ add .Values.intervalSeconds $runDeadline 60 }}
+            initialDelaySeconds: {{ add $runDeadline 60 }}
             periodSeconds: 60
             failureThreshold: 2
           resources:

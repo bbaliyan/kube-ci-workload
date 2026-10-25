@@ -14,11 +14,13 @@ interval="${INTERVAL:-60}"
 deadline="${RUN_DEADLINE:-900}"
 heartbeat="${HEARTBEAT:-/tmp/heartbeat}"
 
-trap 'exit 0' TERM INT
+trap 'kill "${run:-}" 2>/dev/null; exit 0' TERM INT
 
 while true; do
   started="$(date +%s)"
-  timeout --kill-after=10 "$deadline" "$here/sync.sh" || echo "loop: the run failed or timed out (exit $?). The next run starts on schedule."
+  # The run is a background job, so that SIGTERM stops the pod at once.
+  timeout --kill-after=10 "$deadline" "$here/sync.sh" & run=$!
+  wait "$run" || echo "loop: the run failed or timed out. The next run starts on schedule."
   touch "$heartbeat"
   wait_s=$((interval - ($(date +%s) - started)))
   # sleep runs in the background so that SIGTERM stops the pod at once.
