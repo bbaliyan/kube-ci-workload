@@ -33,12 +33,12 @@ The runner and its job pods reach GitLab through the in-cluster Service, so they
 ## Addresses
 
 - **The tailnet name is canonical.** `gitlab.externalUrl` is `https://git.<tailnet>.ts.net`. GitLab builds its links and clone URLs from it. The Tailscale operator starts a proxy that joins the tailnet as `git`, ends TLS with a certificate from Tailscale, and passes plain HTTP to GitLab. GitLab is set to listen on HTTP and to trust the proxy's `X-Forwarded-Proto`.
-- **The LAN name is a second door.** `gitlab.lanHost` (`git.ci.lan`) is a Traefik route for git and the API over plain HTTP. Sign-in does not work on it, because GitLab sets cookies for HTTPS.
+- **The LAN name is a second door.** `gitlab.lanHost` is a Traefik route for git and the API over plain HTTP. Sign-in does not work on it, because GitLab sets cookies for HTTPS.
 - The proxy joins the tailnet with the tag `tag:ci`. The tailnet policy decides who can reach it.
 
 ## Use it
 
-The cluster owner creates one Argo CD Application with `path: bootstrap` and this repository. The defaults in `bootstrap/values.yaml` match the homelab. Override a value with `helm.valuesObject`, for example `gitlab.externalUrl`.
+The cluster owner creates one Argo CD Application with `path: bootstrap` and this repository. The defaults in `bootstrap/values.yaml` are placeholders. You must set `gitlab.externalUrl` to your tailnet name with `helm.valuesObject`. You can also set `gitlab.lanHost` to add a plain HTTP route on the LAN.
 
 The GitLab node is tainted `dedicated=gitlab` and labelled `kube-compute.io/node-group=gitlab`. Nothing else runs there.
 
