@@ -10,6 +10,7 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps: GitLab, its first
 | `apps/gitlab/` | GitLab CE from GitLab's own Docker image, as one StatefulSet. Every default is on. |
 | `apps/first-objects/` | A Job that creates the first GitLab objects and the Secrets that the other apps read. |
 | `apps/gitlab-runner/` | The GitLab Runner chart with this cluster's settings. |
+| `apps/mirror-sync/` | One pod that copies repositories from GitHub into the `mirror` group every 60 seconds. |
 | `apps/tailscale-operator/` | The Tailscale operator, which puts the GitLab Ingress on the tailnet. |
 | `tests/` | Tests for the scripts and for what the charts render. |
 
@@ -20,12 +21,14 @@ Argo CD installs the apps in this order, one sync wave each:
 1. `gitlab` and `tailscale-operator`: the GitLab StatefulSet with its Service and Ingress, and the operator. The first start of GitLab takes several minutes.
 2. `first-objects`: when GitLab is ready, a Job creates the `mirror` group, a token that pushes to it, a runner and a new root password. It saves them as Secrets and then revokes its own admin token. If the Secrets exist, it does nothing.
 3. `gitlab-runner`: the runner reads its token from the Secret.
+4. `mirror-sync`: one pod runs `loop.sh`, which runs `sync.sh` every 60 seconds (`intervalSeconds`). Each run compares the refs on GitHub and GitLab and pushes only what changed, so a quiet run is cheap. One pod, with no CronJob, means no new pod every minute and no overlapping runs. To mirror a private repository, the consumer sets `repos` and `sourceBase` and makes the Secret `github-source`.
 
 | Secret | Namespace | Keys | Made by | Read by |
 |---|---|---|---|---|
 | `gitlab-root` | `gitlab` | `username`, `password` | `first-objects` | You, to sign in |
 | `gitlab-mirror` | `gitlab` | `token` | `first-objects` | The mirror sync |
 | `gitlab-runner` | `gitlab-runner` | `runner-token`, `runner-registration-token` | `first-objects` | The runner |
+| `github-source` | `gitlab` | `token` | `kube-homelab` | The mirror sync (a read-only GitHub token) |
 | `operator-oauth` | `tailscale` | `client_id`, `client_secret` | `kube-homelab` | The Tailscale operator |
 
 The runner and its job pods reach GitLab through the in-cluster Service, so they need no DNS name.

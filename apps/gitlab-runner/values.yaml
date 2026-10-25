@@ -2,6 +2,9 @@ gitlab-runner:
   # The runner and its jobs reach GitLab through the Service, not the ingress name, so they need no DNS.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
   concurrent: 3
+  # The default image of a job pod. The config below reads it, so Renovate can track it.
+  # renovate: datasource=docker depName=alpine
+  jobImageTag: "3.22"
   rbac:
     create: true
   nodeSelector: {}
@@ -13,7 +16,7 @@ gitlab-runner:
         clone_url = "http://gitlab.gitlab.svc.cluster.local"
         [runners.kubernetes]
           namespace = "{{.Release.Namespace}}"
-          image = "alpine:3.22"
+          image = "alpine:{{ .Values.jobImageTag }}"
           cpu_request = "500m"
           memory_request = "1Gi"
           memory_limit = "3Gi"

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mirror-sync
+  namespace: {{ .Release.Namespace }}
+data:
+  repos.txt: |
+    {{- range .Values.repos }}
+    {{ . }}
+    {{- end }}
+  sync.sh: |
+{{ .Files.Get "files/sync.sh" | indent 4 }}
+  sync-repo.sh: |
+{{ .Files.Get "files/sync-repo.sh" | indent 4 }}
+  loop.sh: |
+{{ .Files.Get "files/loop.sh" | indent 4 }}
+  askpass.sh: |
+{{ .Files.Get "files/askpass.sh" | indent 4 }}

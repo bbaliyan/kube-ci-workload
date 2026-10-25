@@ -1,0 +1,5 @@
+apiVersion: v2
+name: mirror-sync
+description: A CronJob that copies repositories from GitHub into the mirror group of the in-cluster GitLab
+type: application
+version: 0.1.0

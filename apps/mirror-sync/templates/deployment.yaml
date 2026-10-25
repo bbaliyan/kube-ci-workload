@@ -1,0 +1,83 @@
+# One replica with the Recreate strategy: the loop in loop.sh is the only process that syncs,
+# so two runs never overlap. The liveness probe restarts the pod if the loop stops.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mirror-sync
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mirror-sync
+  template:
+    metadata:
+      labels:
+        app: mirror-sync
+      annotations:
+        # A change to the scripts or the list restarts the pod.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sync
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["bash", "/scripts/loop.sh"]
+          env:
+            - name: SRC_BASE
+              value: {{ .Values.sourceBase | quote }}
+            - name: DST_BASE
+              value: {{ .Values.mirrorBase | quote }}
+            - name: REPOS_FILE
+              value: /scripts/repos.txt
+            - name: SYNC_TIMEOUT
+              value: {{ .Values.repoTimeoutSeconds | quote }}
+            - name: INTERVAL
+              value: {{ .Values.intervalSeconds | quote }}
+            - name: RUN_DEADLINE
+              value: {{ .Values.runDeadlineSeconds | quote }}
+            - name: SRC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sourceTokenSecret }}
+                  key: token
+            - name: DST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mirrorTokenSecret }}
+                  key: token
+          # The loop touches /tmp/heartbeat after every run. The file is stale only if the loop is stuck.
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/heartbeat 2>/dev/null || echo 0) )) -lt {{ add .Values.intervalSeconds .Values.runDeadlineSeconds 60 }}
+            initialDelaySeconds: {{ add .Values.runDeadlineSeconds 60 }}
+            periodSeconds: 60
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: mirror-sync
+            defaultMode: 0555
