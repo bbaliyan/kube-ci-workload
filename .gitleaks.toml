@@ -1,11 +1,12 @@
 [extend]
 path = "/usr/share/kube-devenv/checks/gitleaks.toml"
 
-# The default values for the homelab ci cluster live in bootstrap/values.yaml, by design:
-# this repo is private. Keep every other file free of internal names.
+# These two commits held the homelab host names in bootstrap/values.yaml, before the
+# defaults became placeholders. History cannot change, so the scan skips them.
 [[allowlists]]
-description = "Internal hostnames in the bootstrap defaults"
+description = "Commits from before the host names moved to the consumer"
 targetRules = ["internal-url"]
-paths = [
-  '''^bootstrap/values\.yaml$''',
+commits = [
+  "7930116ef04d2b52413b3a37da9b3712d2827fe5",
+  "e5c46c059142ad6d3e88a2721766a140f75df3a6",
 ]

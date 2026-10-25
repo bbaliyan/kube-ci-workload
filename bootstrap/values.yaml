@@ -1,18 +1,19 @@
-# Point one Argo CD Application at this chart. Every value below can be overridden
-# there. The defaults match the homelab ci cluster.
+# Point one Argo CD Application at this chart and override the values below there.
+# The defaults are placeholders: the real host names belong to the consumer.
 repoURL: https://github.com/bbaliyan/kube-ci-workload
 revision: main
 
 gitlab:
   # The canonical address: the tailnet name. GitLab builds its links and clone URLs from it.
-  externalUrl: https://git.possum-pauling.ts.net
+  # Override it with your tailnet.
+  externalUrl: https://git.example.ts.net
   # The tailnet Ingress. The first label of externalUrl must equal the hostname.
   tailnet:
     enabled: true
     hostname: git
   # A second door on the LAN, through Traefik, for git and the API over plain HTTP.
   # Sign-in does not work on it: GitLab sets cookies for HTTPS. Empty turns it off.
-  lanHost: git.ci.lan
+  lanHost: ""
   # The GitLab node pool is tainted, so only GitLab runs on it.
   nodeSelector:
     kube-compute.io/node-group: gitlab
