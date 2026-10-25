@@ -97,6 +97,10 @@ fi
 # would refuse that push on every run, so the mirror group turns the protection off.
 api PUT "/groups/$group_id" --data-urlencode default_branch_protection=0 >/dev/null || fail "cannot update the group $group"
 
+# The mirrored repositories bring their own pipeline files. A repository without one must not get an
+# Auto DevOps pipeline that builds it with buildpacks.
+api PUT /application/settings --data-urlencode auto_devops_enabled=false >/dev/null || fail "cannot turn off Auto DevOps"
+
 if ! have_secret "$GITLAB_NAMESPACE" gitlab-mirror; then
   expires="$(date -u -d '+364 days' +%Y-%m-%d)"
   mirror_token="$(api POST "/groups/$group_id/access_tokens" \
