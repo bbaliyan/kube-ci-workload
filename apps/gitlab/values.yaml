@@ -4,11 +4,20 @@ image:
   repository: gitlab/gitlab-ce
   tag: 19.5.1-ce.0
 
-# The address people use, and the name of the Traefik route. It must start with http:// or https://.
-# The bootstrap chart sets the real one.
+# The canonical address. GitLab builds its links and clone URLs from it. It must start with http://
+# or https://. With https, TLS ends at the proxy in front of GitLab (the tailnet Ingress), and
+# GitLab itself listens on plain HTTP. The bootstrap chart sets the real one.
 externalUrl: http://gitlab.example
 
-# The Traefik entry point that serves externalUrl. The platform names its plain HTTP one `web`.
+# The tailnet Ingress, from the Tailscale operator. The first label of externalUrl is normally its hostname.
+tailnet:
+  enabled: false
+  hostname: git
+
+# A Traefik route on the LAN for this host name. Empty turns it off. Sign-in does not work over plain
+# HTTP when externalUrl is https, because GitLab sets cookies for HTTPS. Git and the API work.
+lanHost: ""
+# The Traefik entry point for lanHost. The platform names its plain HTTP one `web`.
 entryPoint: web
 
 storageClass: local-path

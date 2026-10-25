@@ -40,12 +40,17 @@ lint-renovate:
 	python3 -c "import json; json.load(open('renovate.json'))"
 
 # Lints and renders every chart, then validates the output against the Kubernetes and CRD schemas.
+# The operator chart ships CustomResourceDefinitions, and no catalog has a schema for that kind,
+# so a missing schema is skipped.
+charts: export KUBECONFORM_IGNORE_MISSING_SCHEMAS = 1
 charts:
 	helm repo add gitlab https://charts.gitlab.io --force-update >/dev/null
+	helm repo add tailscale https://pkgs.tailscale.com/helmcharts --force-update >/dev/null
 	$(CHECKS)/helm-kubeconform.sh .
 
 test-scripts:
 	tests/first-objects.sh
+	tests/render.sh
 
 test-integration:
 	tests/integration.sh

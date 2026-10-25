@@ -32,6 +32,12 @@ spec:
             - name: GITLAB_OMNIBUS_CONFIG
               value: |
                 external_url '{{ .Values.externalUrl }}'
+                {{- if hasPrefix "https://" .Values.externalUrl }}
+                nginx['listen_port'] = 80
+                nginx['listen_https'] = false
+                nginx['proxy_set_headers'] = { "X-Forwarded-Proto" => "https", "X-Forwarded-Ssl" => "on" }
+                letsencrypt['enable'] = false
+                {{- end }}
                 {{- with .Values.omnibusConfig }}
                 {{- . | nindent 16 }}
                 {{- end }}

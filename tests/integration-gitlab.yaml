@@ -1,6 +1,7 @@
 # Values for the integration test (tests/integration.sh): GitLab on the idle privileged node,
-# with less memory than the real node has.
-externalUrl: http://git.test.invalid
+# with less memory than the real node has. The https address tests the settings for a proxy in
+# front of GitLab. The test talks to GitLab on plain HTTP, as the Tailscale proxy does.
+externalUrl: https://git.test.invalid
 nodeSelector:
   ci.kube-stack/privileged: "true"
 tolerations:
