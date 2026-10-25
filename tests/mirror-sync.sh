@@ -72,6 +72,13 @@ sync_env() {
   env SRC_BASE="$src_base" DST_BASE="$dst_base" SRC_TOKEN="$src_token" DST_TOKEN="$dst_token" "$@"
 }
 
+# a checkout that disables credential prompts, as a GitLab runner makes, must not stop askpass
+make_source runner
+make_mirror runner
+mkdir "$work/checkout" && git -C "$work/checkout" init --quiet && git -C "$work/checkout" config credential.interactive never
+out="$(cd "$work/checkout" && sync_env "$dir/sync-repo.sh" runner "$work/cache-runner" 2>&1)"
+is "a sync run inside a checkout with credential.interactive=never still gets its tokens" "$?" "$out"
+
 # ---- sync-repo: the first run ------------------------------------------------
 make_source alpha
 make_mirror alpha

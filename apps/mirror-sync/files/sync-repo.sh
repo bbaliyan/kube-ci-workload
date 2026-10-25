@@ -31,6 +31,13 @@ cache="${2:?usage: sync-repo.sh <name> <cache-dir>}"
 
 [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || fail "bad repository name: $name"
 
+# Git reads the config of the repository it runs in. A GitLab runner sets credential.interactive=never
+# in its checkout, and that stops askpass. Run from a directory that is no repository.
+cache="$(realpath -m -- "$cache")"
+neutral="$(mktemp -d)"
+trap 'rm -rf "$neutral"' EXIT
+cd "$neutral"
+
 repo_url() { # base, user, name
   local base="${1%/}"
   [[ "$base" =~ ^https?://[^/@]+(/[^@]*)?$ ]] || fail "base must be http(s)://host/path with no user or token: $base"

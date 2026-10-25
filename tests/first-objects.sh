@@ -131,6 +131,8 @@ is "with the root Secret present it keeps the root password" "$?" "exit $code: $
 grep -q '^gitlab-mirror' "$case_dir/applied" && grep -q '^gitlab-runner' "$case_dir/applied"
 is "with the root Secret present it still saves the other two" "$?" "$(cat "$case_dir/applied")"
 
+grep -q -- '--request PUT .*/application/settings .*auto_devops_enabled=false' "$case_dir/curl.log" 2>/dev/null
+is "Auto DevOps is turned off for the instance" "$?" "$(head -8 "$case_dir/curl.log" 2>/dev/null)"
 grep -q -- '--request PUT .*/groups/7 .*default_branch_protection=0' "$case_dir/curl.log" 2>/dev/null
 is "the mirror group allows a force push on its default branch" "$?" "$(cat "$case_dir/curl.log" 2>/dev/null | head -5)"
 
