@@ -19,7 +19,9 @@ gitlab-runner:
           image = "alpine:{{ .Values.jobImageTag }}"
           cpu_request = "500m"
           memory_request = "1Gi"
-          memory_limit = "3Gi"
+          # The kube-compute check peaks at 4.4 GiB: tofu test starts several provider plugins. At 3 GiB
+          # it hit the limit and plugin start timed out. GitHub gives that job a 16 GB machine.
+          memory_limit = "6Gi"
           # Job pods never run on the privileged node. Its taint already stops them,
           # and this term keeps them off it if the taint is ever removed.
           [runners.kubernetes.affinity]
