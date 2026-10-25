@@ -5,7 +5,7 @@ revision: main
 
 gitlab:
   # The canonical address: the tailnet name. GitLab builds its links and clone URLs from it.
-  externalUrl: https://git.tail71509.ts.net
+  externalUrl: https://git.possum-pauling.ts.net
   # The tailnet Ingress. The first label of externalUrl must equal the hostname.
   tailnet:
     enabled: true

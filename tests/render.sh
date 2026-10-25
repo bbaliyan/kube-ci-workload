@@ -41,7 +41,7 @@ grep -q 'Host(`git.example.test`)' <<<"$out" && grep -q 'kind: IngressRoute' <<<
 is "a LAN host name makes a Traefik route" "$?" "$out"
 
 out="$(helm template b "$repo/bootstrap")"
-grep -q 'externalUrl: https://git.tail71509.ts.net' <<<"$out" && grep -q 'lanHost: git.ci.lan' <<<"$out" && grep -q 'enabled: true' <<<"$out"
+grep -q 'externalUrl: https://git.possum-pauling.ts.net' <<<"$out" && grep -q 'lanHost: git.ci.lan' <<<"$out" && grep -q 'enabled: true' <<<"$out"
 is "the bootstrap passes the tailnet address, the LAN name and the tailnet switch to GitLab" "$?" "$out"
 grep -q 'name: tailscale-operator' <<<"$out" && grep -q 'path: apps/tailscale-operator' <<<"$out" && grep -q 'Prune=false,Delete=false' <<<"$out"
 is "the bootstrap installs the Tailscale operator and never prunes it" "$?" "$out"
