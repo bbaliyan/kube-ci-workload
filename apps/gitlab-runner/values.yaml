@@ -2,7 +2,9 @@ gitlab-runner:
   # The runner and its jobs reach GitLab through the Service, not the ingress name, so they need no DNS.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
   # One job at a time, as on a single GitHub runner. The job pod is sized like GitHub's runner for a
-  # public repository: 4 vCPU and 16 GB.
+  # public repository: 4 vCPU and 16 GB. The CPU has a request and no limit, because a limit makes
+  # the kernel throttle a bursty job on an idle node. The memory request equals the limit, so the
+  # scheduler reserves it.
   concurrent: 1
   # The default image of a job pod. The config below reads it, so Renovate can track it.
   # renovate: datasource=docker depName=alpine
@@ -19,9 +21,8 @@ gitlab-runner:
         [runners.kubernetes]
           namespace = "{{.Release.Namespace}}"
           image = "alpine:{{ .Values.jobImageTag }}"
-          cpu_request = "2"
-          cpu_limit = "4"
-          memory_request = "4Gi"
+          cpu_request = "4"
+          memory_request = "16Gi"
           # The kube-compute check peaks at 4.4 GiB: tofu test starts several provider plugins. At a
           # 3 GiB limit it hit the limit and plugin start timed out.
           memory_limit = "16Gi"
