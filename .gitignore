@@ -1,0 +1,4 @@
+# Helm dependency builds and render output
+charts/
+Chart.lock
+out/
