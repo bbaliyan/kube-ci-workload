@@ -48,15 +48,24 @@ export GIT_ASKPASS="$here/askpass.sh" GIT_TERMINAL_PROMPT=0
 
 refspecs=('+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*')
 git_() { git -c credential.helper= "$@"; }
-list_refs() { # url: "sha<TAB>ref" lines for branches and tags, without peeled tag lines
-  local out
-  out="$(git_ ls-remote "$1" 'refs/heads/*' 'refs/tags/*')" || return 1
+list_refs() { # url, [allow-missing]: "sha<TAB>ref" lines for branches and tags, without peeled tag lines
+  local out err
+  err="$(mktemp)"
+  if ! out="$(git_ ls-remote "$1" 'refs/heads/*' 'refs/tags/*' 2>"$err")"; then
+    # GitLab answers "not found" for a mirror project that does not exist yet. The first push creates it.
+    if [ "${2:-}" = allow-missing ] && grep -q 'not found' "$err"; then rm -f "$err"; return 0; fi
+    cat "$err" >&2
+    rm -f "$err"
+    return 1
+  fi
+  cat "$err" >&2
+  rm -f "$err"
   { grep -v '\^{}$' <<<"$out" || true; } | sort
 }
 local_refs() { git_ -C "$cache" for-each-ref --format='%(objectname)%09%(refname)' refs/heads refs/tags | sort; }
 
 src_refs="$(list_refs "$src")" || fail "cannot read the source $name"
-dst_refs="$(list_refs "$dst")" || fail "cannot read the mirror project $name"
+dst_refs="$(list_refs "$dst" allow-missing)" || fail "cannot read the mirror project $name"
 [ -n "$src_refs" ] || fail "the source $name has no branches or tags. Refusing to prune the mirror."
 
 if [ "$src_refs" = "$dst_refs" ]; then

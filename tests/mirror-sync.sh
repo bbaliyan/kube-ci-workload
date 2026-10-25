@@ -254,6 +254,13 @@ is "a base URL that holds a user or token is refused" "$([ $? -ne 0 ]; echo $?)"
 out="$(env SRC_BASE="$src_base" DST_BASE="$src_base" SRC_TOKEN=a DST_TOKEN=b "$dir/sync-repo.sh" alpha "$work/c7" 2>&1)"
 is "the same host for source and mirror is refused" "$([ $? -ne 0 ]; echo $?)" "$out"
 
+# a mirror project that does not exist yet is an empty mirror, so the push can create it
+make_source delta
+out="$(sync_env "$dir/sync-repo.sh" delta "$work/cache-delta" 2>&1)"
+! grep -q 'cannot read the mirror project' <<<"$out"
+is "a mirror project that does not exist is not a read failure" "$?" "$out"
+rm -rf "$work/src/delta.git"
+
 # ---- sync.sh: all repositories ---------------------------------------------------
 make_source beta
 make_source gamma
@@ -342,6 +349,12 @@ if command -v helm >/dev/null; then
   is "the scripts are mounted executable and the pod runs the loop" "$?" "$out"
   grep -q 'name: gitlab-mirror' <<<"$out" && grep -q 'name: github-source' <<<"$out" && ! grep -qE 'glpat-|ghp_' <<<"$out"
   is "both tokens come from Secrets and none is in the chart" "$?" "$out"
+  out="$(helm template m "$repo/apps/mirror-sync")"
+  grep -q 'value: "650"' <<<"$out"
+  is "the run deadline is the repository count times the repository timeout plus 10" "$?" "$(grep -n 'RUN_DEADLINE' -A1 <<<"$out")"
+  out="$(helm template m "$repo/apps/mirror-sync" --set repos='{one}')"
+  grep -q 'value: "300"' <<<"$out"
+  is "a short list still gets the minimum run deadline" "$?" "$(grep -n 'RUN_DEADLINE' -A1 <<<"$out")"
   out="$(helm template m "$repo/apps/mirror-sync" --set repos='{one,two}' | sed -n '/repos.txt/,/sync.sh/p')"
   grep -q 'one' <<<"$out" && grep -q 'two' <<<"$out" && ! grep -q 'kube-compute' <<<"$out"
   is "the repository list is a value" "$?" "$out"

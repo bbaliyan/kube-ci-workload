@@ -131,6 +131,9 @@ is "with the root Secret present it keeps the root password" "$?" "exit $code: $
 grep -q '^gitlab-mirror' "$case_dir/applied" && grep -q '^gitlab-runner' "$case_dir/applied"
 is "with the root Secret present it still saves the other two" "$?" "$(cat "$case_dir/applied")"
 
+grep -q -- '--request PUT .*/groups/7 .*default_branch_protection=0' "$case_dir/curl.log" 2>/dev/null
+is "the mirror group allows a force push on its default branch" "$?" "$(cat "$case_dir/curl.log" 2>/dev/null | head -5)"
+
 SECRETS="" run group-exists GROUP_EXISTS=1
 [ "$code" -eq 0 ] && ! grep -q -- '--request POST .*/groups --' "$case_dir/curl.log" && ! grep -q 'created group' <<<"$out"
 is "an existing group is reused" "$?" "exit $code: $out"

@@ -20,9 +20,10 @@ mirrorBase: http://gitlab.gitlab.svc.cluster.local/mirror
 # so a short interval costs no pod churn. Each run reads the refs of every repository on both
 # sides and fetches only what changed.
 intervalSeconds: 60
-# Seconds one repository may take, and seconds the whole run may take before it is killed.
+# Seconds one repository may take. The run deadline is the repository count times (this + 10),
+# and never less than minRunDeadlineSeconds.
 repoTimeoutSeconds: 120
-runDeadlineSeconds: 900
+minRunDeadlineSeconds: 300
 
 # Secrets in the release namespace. gitlab-mirror is made by the first-objects app.
 # github-source holds a read-only GitHub token and comes from the consumer.
