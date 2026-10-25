@@ -1,0 +1,28 @@
+gitlab-runner:
+  # The runner and its jobs reach GitLab through the Service, not the ingress name, so they need no DNS.
+  gitlabUrl: http://gitlab.gitlab.svc.cluster.local
+  concurrent: 3
+  rbac:
+    create: true
+  nodeSelector: {}
+  runners:
+    # The first-objects Job writes this Secret. It holds the token of the runner it created.
+    secret: gitlab-runner
+    config: |
+      [[runners]]
+        clone_url = "http://gitlab.gitlab.svc.cluster.local"
+        [runners.kubernetes]
+          namespace = "{{.Release.Namespace}}"
+          image = "alpine:3.22"
+          cpu_request = "500m"
+          memory_request = "1Gi"
+          memory_limit = "3Gi"
+          # Job pods never run on the privileged node. Its taint already stops them,
+          # and this term keeps them off it if the taint is ever removed.
+          [runners.kubernetes.affinity]
+            [runners.kubernetes.affinity.node_affinity]
+              [runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution]
+                [[runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms]]
+                  [[runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms.match_expressions]]
+                    key = "ci.kube-stack/privileged"
+                    operator = "DoesNotExist"

@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab
+spec:
+  serviceName: gitlab
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitlab
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitlab
+    spec:
+      # GitLab stops its services in order and flushes to disk. A kill in the middle risks the data.
+      terminationGracePeriodSeconds: 180
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gitlab
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          env:
+            - name: GITLAB_OMNIBUS_CONFIG
+              value: |
+                external_url '{{ .Values.externalUrl }}'
+                {{- with .Values.omnibusConfig }}
+                {{- . | nindent 16 }}
+                {{- end }}
+          ports:
+            - name: http
+              containerPort: 80
+            - name: ssh
+              containerPort: 22
+          # GitLab answers its monitoring endpoints only to localhost, so the probes run curl inside the
+          # container. The image's own gitlab-healthcheck passes before GitLab is configured, which is
+          # too early. The first start takes several minutes while GitLab sets up its database, so the
+          # startup probe allows 20 minutes.
+          startupProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "--max-time", "10", "--output", "/dev/null", "http://localhost/-/readiness"]
+            periodSeconds: 15
+            failureThreshold: 80
+          readinessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "--max-time", "10", "--output", "/dev/null", "http://localhost/-/readiness"]
+            periodSeconds: 15
+            timeoutSeconds: 15
+          livenessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "--max-time", "10", "--output", "/dev/null", "http://localhost/-/liveness"]
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gitlab
+            - name: data
+              mountPath: /var/opt/gitlab
+            - name: logs
+              mountPath: /var/log/gitlab
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: logs
+          emptyDir: {}
+        # GitLab asks for 256 MiB of shared memory.
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: config
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.configSize }}
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.dataSize }}

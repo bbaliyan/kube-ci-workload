@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gitlab
+description: GitLab from GitLab's own Docker image (Omnibus), one StatefulSet with every default on
+type: application
+version: 0.1.0
+appVersion: "19.5.1"

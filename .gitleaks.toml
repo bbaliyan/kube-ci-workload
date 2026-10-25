@@ -1,2 +1,11 @@
 [extend]
 path = "/usr/share/kube-devenv/checks/gitleaks.toml"
+
+# The default values for the homelab ci cluster live in bootstrap/values.yaml, by design:
+# this repo is private. Keep every other file free of internal names.
+[[allowlists]]
+description = "Internal hostnames in the bootstrap defaults"
+targetRules = ["internal-url"]
+paths = [
+  '''^bootstrap/values\.yaml$''',
+]

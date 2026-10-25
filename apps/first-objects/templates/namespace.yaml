@@ -1,0 +1,9 @@
+# The runner app installs into this namespace. The Job writes the runner Secret here, so the
+# namespace must exist before the runner app syncs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.runnerNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/sync-wave: "-1"

@@ -1,0 +1,16 @@
+{{- $host := regexReplaceAll "^https?://" .Values.externalUrl "" }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab
+spec:
+  entryPoints:
+    - {{ .Values.entryPoint }}
+  routes:
+    - match: Host(`{{ $host }}`)
+      kind: Rule
+      services:
+        - name: gitlab
+          port: 80

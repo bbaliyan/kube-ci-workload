@@ -1,0 +1,53 @@
+# A sync hook: Argo CD runs the Job on every sync and deletes the old one first. The script
+# changes nothing when its Secrets exist, so a repeat run is cheap.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: first-objects
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: first-objects
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: first-objects
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["bash", "/scripts/first-objects.sh"]
+          env:
+            - name: GITLAB_NAMESPACE
+              value: {{ .Values.gitlabNamespace | quote }}
+            - name: GITLAB_POD
+              value: {{ .Values.gitlabPod | quote }}
+            - name: RUNNER_NAMESPACE
+              value: {{ .Values.runnerNamespace | quote }}
+            - name: GITLAB_API
+              value: {{ .Values.gitlabApi | quote }}
+            - name: MIRROR_GROUP
+              value: {{ .Values.mirrorGroup | quote }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: first-objects

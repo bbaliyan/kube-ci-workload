@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Argo CD syncs this repo's main branch into the ci cluster, and the required check gates every merge. The dev container image and GitHub Actions automerge once the check passes. GitLab and the GitLab Runner are merged by hand: GitLab must move one minor release at a time, and the runner must stay on the same minor release as GitLab.",
+  "extends": [
+    "local>bbaliyan/renovate-config"
+  ],
+  "enabledManagers": [
+    "custom.regex",
+    "github-actions",
+    "gitlabci",
+    "helm-values",
+    "helmv3"
+  ],
+  "packageRules": [
+    {
+      "description": "GitLab has required upgrade stops, and the runner follows its minor release. A person merges each one.",
+      "matchPackageNames": [
+        "gitlab/gitlab-ce",
+        "gitlab-runner"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Pin the chart version in Chart.yaml, so Renovate can track it.",
+      "matchManagers": [
+        "helmv3"
+      ],
+      "rangeStrategy": "pin"
+    }
+  ]
+}
