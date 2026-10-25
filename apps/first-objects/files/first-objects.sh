@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Create the first GitLab objects, once, and the Secrets that other apps read:
+# Create the first GitLab objects and the Secrets that other apps read, and apply the instance
+# settings. Every run is safe to repeat: an object whose Secret exists is not made again, and the
+# settings are applied again, so a change here reaches a GitLab that already runs.
+#
 #   gitlab-root    (namespace $GITLAB_NAMESPACE)  keys username, password
 #   gitlab-mirror  (namespace $GITLAB_NAMESPACE)  key token: a group token that pushes to the mirror group
 #   gitlab-runner  (namespace $RUNNER_NAMESPACE)  keys runner-token, runner-registration-token
@@ -35,11 +38,6 @@ else
 fi
 
 have_secret() { kubectl -n "$1" get secret "$2" >/dev/null 2>&1; }
-
-if have_secret "$GITLAB_NAMESPACE" gitlab-root && have_secret "$GITLAB_NAMESPACE" gitlab-mirror && have_secret "$RUNNER_NAMESPACE" gitlab-runner; then
-  echo "first-objects: the Secrets exist. Nothing to do."
-  exit 0
-fi
 
 kubectl -n "$GITLAB_NAMESPACE" wait --for=condition=Ready "pod/$GITLAB_POD" --timeout="${GITLAB_READY_TIMEOUT:-30m}"
 

@@ -120,9 +120,9 @@ grep -q 'if true' "$case_dir/rails.code"
 is "a new GitLab gets a new root password" "$?" "$(cat "$case_dir/rails.code")"
 
 # ---- run again -------------------------------------------------------------------------
-SECRETS="gitlab-root gitlab-mirror gitlab-runner" run again
-[ "$code" -eq 0 ] && grep -q 'Nothing to do' <<<"$out" && [ ! -e "$case_dir/rails.log" ] && [ ! -e "$case_dir/curl.log" ]
-is "with all three Secrets present it does nothing" "$?" "exit $code: $out"
+SECRETS="gitlab-root gitlab-mirror gitlab-runner" run again GROUP_EXISTS=1
+[ "$code" -eq 0 ] && [ ! -e "$case_dir/applied" ] && ! grep -q -- '--request POST' "$case_dir/curl.log" && grep -q -- '--request PUT .*/application/settings' "$case_dir/curl.log"
+is "with all three Secrets present it makes no object and still applies the settings" "$?" "exit $code: $out"
 
 # ---- partial state -------------------------------------------------------------------------
 SECRETS="gitlab-root" run partial
