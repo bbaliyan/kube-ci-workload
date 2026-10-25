@@ -1,0 +1,33 @@
+image:
+  repository: ghcr.io/bbaliyan/kube-devenv
+  tag: 0.11.2
+
+# The repositories to copy, one name each, from sourceBase to mirrorBase. The consumer
+# sets the list. These are the public spokes.
+repos:
+  - kube-compute
+  - kube-images
+  - kube-platform
+  - kube-devenv
+  - opnsense-observability
+
+# Where the repositories live on GitHub. Replace the owner.
+sourceBase: https://github.com/example-owner
+# The mirror group on the in-cluster GitLab, over the Service so no DNS or TLS is needed.
+mirrorBase: http://gitlab.gitlab.svc.cluster.local/mirror
+
+# Seconds from the start of one run to the start of the next. One pod stays up and loops,
+# so a short interval costs no pod churn. Each run reads the refs of every repository on both
+# sides and fetches only what changed.
+intervalSeconds: 60
+# Seconds one repository may take, and seconds the whole run may take before it is killed.
+repoTimeoutSeconds: 120
+runDeadlineSeconds: 900
+
+# Secrets in the release namespace. gitlab-mirror is made by the first-objects app.
+# github-source holds a read-only GitHub token and comes from the consumer.
+mirrorTokenSecret: gitlab-mirror
+sourceTokenSecret: github-source
+
+nodeSelector: {}
+tolerations: []

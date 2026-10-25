@@ -51,6 +51,7 @@ charts:
 test-scripts:
 	tests/first-objects.sh
 	tests/render.sh
+	tests/mirror-sync.sh
 
 test-integration:
 	tests/integration.sh

@@ -35,6 +35,14 @@ runner:
     kube-compute.io/node-group: general
   helmValues: {}
 
+# The mirror sync Deployment. Set the repository list and the GitHub owner here, for example
+# helmValues: {repos: [...], sourceBase: https://github.com/<owner>}. The consumer also makes
+# the Secret github-source (key token) in the gitlab namespace.
+mirrorSync:
+  nodeSelector:
+    kube-compute.io/node-group: general
+  helmValues: {}
+
 # The operator that puts the GitLab Ingress on the tailnet. kube-homelab delivers its OAuth client.
 tailscale:
   helmValues: {}
