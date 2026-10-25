@@ -94,7 +94,9 @@ kubectl -n "$rns" wait --for=condition=Available deployment --all --timeout=5m >
 is "the runner starts" "$?" "$(kubectl -n "$rns" get pods 2>&1)"
 
 # Push a project that has a pipeline file. The first push creates the project (push-to-create).
-in_gitlab sh -c "set -e; d=\$(mktemp -d); cd \"\$d\"; git init -q -b main; printf 'test:\n  script:\n    - echo hello\n' > .gitlab-ci.yml; git add .; git -c user.name=test -c user.email=test@example.invalid commit -q -m ci; git push -q http://oauth2:$mirror_token@localhost/mirror/pipelinetest.git main" >/dev/null 2>&1
+# The first job makes an artifact and the second reads it, so the test covers the runner's upload and
+# download paths too, with an https address that job pods cannot reach.
+in_gitlab sh -c "set -e; d=\$(mktemp -d); cd \"\$d\"; git init -q -b main; printf 'build:\n  stage: build\n  script:\n    - echo hello > out.txt\n  artifacts:\n    paths:\n      - out.txt\ncheck:\n  stage: test\n  script:\n    - test \"\$(cat out.txt)\" = hello\n' > .gitlab-ci.yml; git add .; git -c user.name=test -c user.email=test@example.invalid commit -q -m ci; git push -q http://oauth2:$mirror_token@localhost/mirror/pipelinetest.git main" >/dev/null 2>&1
 is "the mirror token creates a project with its first push" "$?" "push"
 
 status=""

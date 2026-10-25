@@ -1,4 +1,4 @@
-{{- $host := regexReplaceAll "^https?://" .Values.externalUrl "" }}
+{{- if .Values.lanHost }}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -9,8 +9,9 @@ spec:
   entryPoints:
     - {{ .Values.entryPoint }}
   routes:
-    - match: Host(`{{ $host }}`)
+    - match: Host(`{{ .Values.lanHost }}`)
       kind: Rule
       services:
         - name: gitlab
           port: 80
+{{- end }}

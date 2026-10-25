@@ -1,0 +1,10 @@
+# The operator reads its OAuth client from the Secret `operator-oauth` (keys client_id and
+# client_secret) in its own namespace. kube-homelab delivers that Secret. The chart creates none
+# while `oauth` is empty.
+tailscale-operator:
+  operatorConfig:
+    hostname: ci-tailscale-operator
+  # The proxies the operator starts for each tailnet Ingress carry this tag. The tailnet ACL
+  # lets the owner reach it on port 443.
+  proxyConfig:
+    defaultTags: tag:ci
