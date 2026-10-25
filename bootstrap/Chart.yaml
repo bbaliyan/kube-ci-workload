@@ -1,0 +1,5 @@
+apiVersion: v2
+name: kube-ci-workload
+description: Argo CD Applications for the CI workloads of the ci cluster
+type: application
+version: 0.1.0

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: gitlab-runner
+description: The GitLab Runner chart with this cluster's settings
+type: application
+version: 0.1.0
+dependencies:
+  - name: gitlab-runner
+    # The runner must stay on the same minor release as GitLab (19.5 here).
+    version: 0.94.1
+    repository: https://charts.gitlab.io

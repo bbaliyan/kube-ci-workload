@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Fast subset of make test-commit: format and secret scan.
+# Enable with: make hooks
+set -euo pipefail
+if ! command -v make >/dev/null; then
+  echo "pre-commit: make not found. Run git commit inside the devcontainer or WSL to run the checks." >&2
+  exit 0
+fi
+exec make test-fast

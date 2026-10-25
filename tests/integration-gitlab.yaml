@@ -1,0 +1,17 @@
+# Values for the integration test (tests/integration.sh): GitLab on the idle privileged node,
+# with less memory than the real node has.
+externalUrl: http://git.test.invalid
+nodeSelector:
+  ci.kube-stack/privileged: "true"
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: privileged
+    effect: NoSchedule
+resources:
+  requests:
+    cpu: "1"
+    memory: 6Gi
+  limits:
+    memory: 12Gi
+dataSize: 20Gi

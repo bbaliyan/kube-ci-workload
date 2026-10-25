@@ -1,0 +1,5 @@
+apiVersion: v2
+name: first-objects
+description: A one-time Job that creates the first GitLab objects and the Secrets that other apps read
+type: application
+version: 0.1.0

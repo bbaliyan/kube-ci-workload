@@ -1,0 +1,27 @@
+# Point one Argo CD Application at this chart. Every value below can be overridden
+# there. The defaults match the homelab ci cluster.
+repoURL: https://github.com/bbaliyan/kube-ci-workload
+revision: main
+
+gitlab:
+  externalUrl: http://git.ci.lan
+  # The GitLab node pool is tainted, so only GitLab runs on it.
+  nodeSelector:
+    kube-compute.io/node-group: gitlab
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: gitlab
+      effect: NoSchedule
+  helmValues: {}
+
+# Small workloads run next to the platform, on the general worker.
+firstObjects:
+  nodeSelector:
+    kube-compute.io/node-group: general
+  helmValues: {}
+
+runner:
+  nodeSelector:
+    kube-compute.io/node-group: general
+  helmValues: {}
