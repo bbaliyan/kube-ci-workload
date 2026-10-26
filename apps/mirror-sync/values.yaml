@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/bbaliyan/kube-devenv
-  tag: 0.11.2
+  tag: 0.13.1
 
 # The repositories to copy, one name each, from sourceBase to mirrorBase. The consumer
 # sets the list. These are the public spokes.
