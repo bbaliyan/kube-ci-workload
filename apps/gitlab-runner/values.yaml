@@ -8,7 +8,7 @@ gitlab-runner:
   concurrent: 1
   # The default image of a job pod. The config below reads it, so Renovate can track it.
   # renovate: datasource=docker depName=alpine
-  jobImageTag: "3.22"
+  jobImageTag: "3.24"
   rbac:
     create: true
   nodeSelector: {}
