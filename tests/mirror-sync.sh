@@ -332,12 +332,16 @@ echo run >>"%s/calls"
 [ "$(wc -l <"%s/calls")" -gt 1 ]
 ' "$work" "$work" >"$loop_dir/sync.sh"
 chmod +x "$loop_dir/loop.sh" "$loop_dir/sync.sh"
+started="$(date +%s)"
 env INTERVAL=1 HEARTBEAT="$work/heartbeat" "$loop_dir/loop.sh" >"$work/loop.out" 2>&1 &
 loop_pid=$!
 sleep 3.5
 calls="$(wc -l <"$work/calls")"
-[ "$calls" -ge 3 ] && [ "$calls" -le 4 ]
-is "the loop runs sync.sh once every interval" "$?" "calls: $calls"
+# A busy runner can overshoot the sleep, so the bounds follow the time that really passed:
+# one call at the start and one more for each whole second, give or take one.
+elapsed=$(($(date +%s) - started))
+[ "$calls" -ge "$elapsed" ] && [ "$calls" -le $((elapsed + 2)) ]
+is "the loop runs sync.sh once every interval" "$?" "calls: $calls in about $elapsed seconds"
 grep -q 'the run failed' "$work/loop.out"
 is "a failed run does not stop the loop" "$?" "$(cat "$work/loop.out")"
 [ -e "$work/heartbeat" ]
