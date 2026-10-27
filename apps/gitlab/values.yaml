@@ -9,12 +9,12 @@ image:
 # GitLab itself listens on plain HTTP. The bootstrap chart sets the real one.
 externalUrl: http://gitlab.example
 
-# The tailnet Ingress, from the Tailscale operator. The first label of externalUrl is normally its hostname.
+# The tailnet Ingress, from the Tailscale operator. Its host name is the first label of externalUrl, so the
+# canonical address is set in one place.
 # It is served by a ProxyGroup as the Tailscale Service svc:<hostname>. The tailnet policy must let the
 # tags own and auto-approve that Service (README).
 tailnet:
   enabled: false
-  hostname: git
   proxyGroup: gitlab
   tags:
     - tag:ci

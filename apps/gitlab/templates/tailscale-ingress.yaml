@@ -18,5 +18,5 @@ spec:
         number: 80
   tls:
     - hosts:
-        - {{ .Values.tailnet.hostname }}
+        - {{ include "gitlab.tailnetHostname" . }}
 {{- end }}

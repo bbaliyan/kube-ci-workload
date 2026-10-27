@@ -1,6 +1,5 @@
 # Used by make charts: renders the optional parts too, so the schema check covers them.
-externalUrl: https://git.example.ts.net
+externalUrl: https://git-ci.example.ts.net
 tailnet:
   enabled: true
-  hostname: git
 lanHost: git.example.test
