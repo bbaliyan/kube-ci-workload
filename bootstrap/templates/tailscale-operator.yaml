@@ -4,8 +4,8 @@ metadata:
   name: tailscale-operator
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
-    # Every tailnet Ingress depends on the operator. Argo CD never prunes or deletes it.
+    argocd.argoproj.io/sync-wave: "-1"
+    # Every tailnet Ingress and the ProxyGroup depend on the operator, so it syncs first. Argo CD never prunes or deletes it.
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
   project: default

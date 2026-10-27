@@ -1,0 +1,19 @@
+{{- if .Values.tailnet.enabled }}
+# The proxy that serves the tailnet Ingress. The host name belongs to a Tailscale Service
+# (svc:<hostname>), not to a proxy device, so a device left behind by a destroyed cluster cannot
+# push the name to `git-1`. A rebuilt cluster takes the same Service back.
+# The CRD comes with the operator (apps/tailscale-operator), which syncs first.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: {{ .Values.tailnet.proxyGroup }}
+  labels:
+    app.kubernetes.io/name: gitlab
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  type: ingress
+  replicas: 1
+  tags:
+    {{- toYaml .Values.tailnet.tags | nindent 4 }}
+{{- end }}

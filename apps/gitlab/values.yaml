@@ -10,9 +10,14 @@ image:
 externalUrl: http://gitlab.example
 
 # The tailnet Ingress, from the Tailscale operator. The first label of externalUrl is normally its hostname.
+# It is served by a ProxyGroup as the Tailscale Service svc:<hostname>. The tailnet policy must let the
+# tags own and auto-approve that Service (README).
 tailnet:
   enabled: false
   hostname: git
+  proxyGroup: gitlab
+  tags:
+    - tag:ci
 
 # A Traefik route on the LAN for this host name. Empty turns it off. Sign-in does not work over plain
 # HTTP when externalUrl is https, because GitLab sets cookies for HTTPS. Git and the API work.
