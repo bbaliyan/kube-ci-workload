@@ -7,7 +7,7 @@ gitlab-ci-pipelines-exporter:
   config:
     gitlab:
       url: http://gitlab.gitlab.svc.cluster.local
-    # Every project of the mirror group. The exporter reads only main and master by default.
+    # Every project of the mirror group. Its branch default is main and master.
     wildcards:
       - owner:
           name: mirror
@@ -15,6 +15,11 @@ gitlab-ci-pipelines-exporter:
     project_defaults:
       # Emit a 0 for each status that is not current. The green share needs the zeros.
       output_sparse_status_metrics: false
+      # The exporter pulls tags too, which are most of the refs. Only the default branch is a KPI.
+      pull:
+        refs:
+          tags:
+            enabled: false
   # The platform Prometheus scrapes only monitors that carry release: prometheus.
   serviceMonitor:
     enabled: true

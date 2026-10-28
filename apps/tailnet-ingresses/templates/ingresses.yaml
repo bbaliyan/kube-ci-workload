@@ -1,0 +1,22 @@
+# Needs the Tailscale operator (apps/tailscale-operator). An Ingress must sit in the namespace of
+# its Service, so each one names its own.
+{{- range .Values.ingresses }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+  annotations:
+    tailscale.com/proxy-group: {{ $.Values.proxyGroup }}
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: {{ .service }}
+      port:
+        number: {{ .port }}
+  tls:
+    - hosts:
+        - {{ .name }}
+{{- end }}

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: tailnet-ingresses
+description: Tailnet names for the web interfaces of the platform, through the shared ProxyGroup
+type: application
+version: 0.1.0

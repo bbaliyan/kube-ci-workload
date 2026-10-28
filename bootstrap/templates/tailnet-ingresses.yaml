@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailnet-ingresses
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL | quote }}
+    targetRevision: {{ .Values.revision | quote }}
+    path: apps/tailnet-ingresses
+    helm:
+      valuesObject:
+        {{- mergeOverwrite (deepCopy .Values.tailnetIngresses.helmValues) (dict "proxyGroup" .Values.tailscale.proxyGroup) | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # The namespaces and Services come from the platform, which may still be starting.
+    retry:
+      limit: 10
+      backoff:
+        duration: 1m
+        maxDuration: 10m
