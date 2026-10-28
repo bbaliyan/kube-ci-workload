@@ -33,6 +33,12 @@ tests:
       - equal:
           path: spec.defaultBackend.service.name
           value: prometheus-grafana
+  - it: turns on the HTTP endpoint, so that the Service is advertised before it has a certificate
+    asserts:
+      - equal:
+          path: metadata.annotations["tailscale.com/http-endpoint"]
+          value: enabled
+        documentIndex: 0
   - it: follows the ProxyGroup name that is set
     set:
       proxyGroup: other
