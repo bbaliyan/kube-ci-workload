@@ -6,11 +6,10 @@ revision: main
 gitlab:
   # The canonical address: the tailnet name. GitLab builds its links and clone URLs from it.
   # Override it with your tailnet.
-  externalUrl: https://git.example.ts.net
-  # The tailnet Ingress. The first label of externalUrl must equal the hostname.
+  externalUrl: https://git-ci.example.ts.net
+  # The tailnet Ingress. Its host name is the first label of externalUrl.
   tailnet:
     enabled: true
-    hostname: git
   # A second door on the LAN, through Traefik, for git and the API over plain HTTP.
   # Sign-in does not work on it: GitLab sets cookies for HTTPS. Empty turns it off.
   lanHost: ""
@@ -45,4 +44,6 @@ mirrorSync:
 
 # The operator that puts the GitLab Ingress on the tailnet. kube-homelab delivers its OAuth client.
 tailscale:
+  # The ProxyGroup that serves every tailnet Ingress. GitLab and the later apps use this name.
+  proxyGroup: ci-proxy
   helmValues: {}

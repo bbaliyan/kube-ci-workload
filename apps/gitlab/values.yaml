@@ -9,10 +9,13 @@ image:
 # GitLab itself listens on plain HTTP. The bootstrap chart sets the real one.
 externalUrl: http://gitlab.example
 
-# The tailnet Ingress, from the Tailscale operator. The first label of externalUrl is normally its hostname.
+# The tailnet Ingress, from the Tailscale operator. Its host name is the first label of externalUrl, so the
+# canonical address is set in one place.
+# It is served by the ProxyGroup of the operator app, as the Tailscale Service svc:<hostname>. The tailnet
+# policy must auto-approve that Service (README). proxyGroup must name that group; the bootstrap chart sets it.
 tailnet:
   enabled: false
-  hostname: git
+  proxyGroup: ci-proxy
 
 # A Traefik route on the LAN for this host name. Empty turns it off. Sign-in does not work over plain
 # HTTP when externalUrl is https, because GitLab sets cookies for HTTPS. Git and the API work.

@@ -1,6 +1,6 @@
 {{- if .Values.tailnet.enabled }}
-# Needs the Tailscale operator (apps/tailscale-operator). The operator starts a proxy that joins the
-# tailnet as this host name and ends TLS with a certificate from Tailscale.
+# Needs the Tailscale operator (apps/tailscale-operator). The ProxyGroup serves this host name as a
+# Tailscale Service on the tailnet and ends TLS with a certificate from Tailscale.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/name: gitlab
   annotations:
-    tailscale.com/hostname: {{ .Values.tailnet.hostname }}
+    tailscale.com/proxy-group: {{ .Values.tailnet.proxyGroup }}
 spec:
   ingressClassName: tailscale
   defaultBackend:
@@ -18,5 +18,5 @@ spec:
         number: 80
   tls:
     - hosts:
-        - {{ .Values.tailnet.hostname }}
+        - {{ include "gitlab.tailnetHostname" . }}
 {{- end }}
