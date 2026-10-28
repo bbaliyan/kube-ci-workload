@@ -1,0 +1,18 @@
+{{- if .Values.proxyGroup.enabled }}
+# The proxy pods for every tailnet Ingress of the cluster. An Ingress picks the group with the
+# annotation tailscale.com/proxy-group. Its host name then belongs to a Tailscale Service
+# (svc:<hostname>), not to a proxy device, so a device left behind by a destroyed cluster cannot
+# push the name to `<hostname>-1`. A rebuilt cluster takes the same Services back.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: {{ .Values.proxyGroup.name }}
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  type: ingress
+  replicas: {{ .Values.proxyGroup.replicas }}
+  hostnamePrefix: {{ .Values.proxyGroup.name }}
+  tags:
+    - {{ index .Values "tailscale-operator" "proxyConfig" "defaultTags" }}
+{{- end }}

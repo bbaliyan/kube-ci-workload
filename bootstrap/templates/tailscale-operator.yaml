@@ -13,11 +13,9 @@ spec:
     repoURL: {{ .Values.repoURL | quote }}
     targetRevision: {{ .Values.revision | quote }}
     path: apps/tailscale-operator
-    {{- with .Values.tailscale.helmValues }}
     helm:
       valuesObject:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
+        {{- mergeOverwrite (dict "proxyGroup" (dict "name" .Values.tailscale.proxyGroup)) .Values.tailscale.helmValues | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: tailscale

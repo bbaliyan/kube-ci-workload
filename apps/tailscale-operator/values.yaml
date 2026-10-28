@@ -8,3 +8,11 @@ tailscale-operator:
   # lets the owner reach it on port 443.
   proxyConfig:
     defaultTags: tag:ci
+
+# The ProxyGroup that serves the tailnet Ingresses. Its pods are named <name>-0, <name>-1 and so on,
+# and carry the tag of proxyConfig.defaultTags. Two pods let one restart while the other serves.
+# The bootstrap chart passes the same name to the apps that have a tailnet Ingress.
+proxyGroup:
+  enabled: true
+  name: ci-proxy
+  replicas: 2
