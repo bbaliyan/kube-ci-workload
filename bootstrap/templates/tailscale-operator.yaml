@@ -15,7 +15,7 @@ spec:
     path: apps/tailscale-operator
     helm:
       valuesObject:
-        {{- mergeOverwrite (dict "proxyGroup" (dict "name" .Values.tailscale.proxyGroup)) .Values.tailscale.helmValues | toYaml | nindent 8 }}
+        {{- mergeOverwrite (deepCopy .Values.tailscale.helmValues) (dict "proxyGroup" (dict "name" .Values.tailscale.proxyGroup)) | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: tailscale

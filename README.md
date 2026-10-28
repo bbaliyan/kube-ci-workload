@@ -39,7 +39,8 @@ The runner and its job pods reach GitLab through the in-cluster Service, so they
 - **The LAN name is a second door.** `gitlab.lanHost` is a Traefik route for git and the API over plain HTTP. Sign-in does not work on it, because GitLab sets cookies for HTTPS.
 - The proxies are the ProxyGroup `ci-proxy` of the operator app, two pods that join the tailnet as `ci-proxy-0` and `ci-proxy-1` with the tag `tag:ci`. Every tailnet Ingress of the cluster can use the group. The tailnet policy decides who can reach it.
 - The tailnet policy must also let the operator own `tag:ci`, and must auto-approve the Service: an entry for `svc:git-ci` under `autoApprovers.services` with `tag:ci`. The operator's OAuth client needs the Services write scope, next to Devices Core and Auth Keys. Tailscale Services must be available on your plan.
-- Each rebuild still leaves the old proxy pod and operator devices offline in the tailnet. They are harmless and have other names. Remove them in the admin console when you want a tidy list.
+- Each rebuild leaves the old proxy and operator devices offline in the tailnet, and the new pods join as `ci-proxy-0-1` and so on. Only the Service names stay stable. The leftovers are harmless. Remove them in the admin console when you want a tidy list.
+- The tailnet policy must also grant access to the Services: allow your user on `tag:ci` (which the Services carry) on port 443.
 
 ## Use it
 

@@ -40,20 +40,30 @@ is "the GitLab chart makes no ProxyGroup: the operator app owns it" "$?"
 
 tailscale="$(mktemp -d)"
 trap 'rm -rf "$tailscale"' EXIT
-cp -r "$repo/apps/tailscale-operator/Chart.yaml" "$repo/apps/tailscale-operator/Chart.lock" "$repo/apps/tailscale-operator/values.yaml" "$repo/apps/tailscale-operator/templates" "$tailscale/"
-helm repo add tailscale https://pkgs.tailscale.com/helmcharts --force-update >/dev/null && helm dependency build "$tailscale" >/dev/null
+cp -r "$repo/apps/tailscale-operator/Chart.yaml" "$repo/apps/tailscale-operator/values.yaml" "$repo/apps/tailscale-operator/templates" "$tailscale/"
+helm repo add tailscale https://pkgs.tailscale.com/helmcharts --force-update >/dev/null && helm dependency update "$tailscale" >/dev/null
 out="$(helm template ts "$tailscale" --namespace tailscale --show-only templates/proxygroup.yaml)"
 grep -q 'kind: ProxyGroup' <<<"$out" && grep -q 'type: ingress' <<<"$out" && grep -q 'name: ci-proxy' <<<"$out" && grep -A1 'tags:' <<<"$out" | grep -q -- '- tag:ci'
 is "the operator app makes a ProxyGroup of type ingress that carries the tag" "$?" "$out"
 grep -q 'replicas: 2' <<<"$out" && grep -q 'hostnamePrefix: ci-proxy' <<<"$out"
 is "the ProxyGroup runs two pods named ci-proxy-0 and ci-proxy-1" "$?" "$out"
-! helm template ts "$tailscale" --set proxyGroup.enabled=false --show-only templates/proxygroup.yaml 2>/dev/null | grep -q 'kind: ProxyGroup'
+! helm template ts "$tailscale" --set proxyGroup.enabled=false | grep -qx 'kind: ProxyGroup'
 is "the ProxyGroup can be turned off" "$?"
+grep -q 'sync-wave: "1"' <<<"$out"
+is "the ProxyGroup syncs after the operator CRDs" "$?" "$out"
+out="$(helm template ts "$tailscale" --set tailscale-operator.proxyConfig.defaultTags='tag:ci\,tag:two' --show-only templates/proxygroup.yaml)"
+grep -qx '    - tag:ci' <<<"$out" && grep -qx '    - tag:two' <<<"$out"
+is "a list of tags becomes one tag each" "$?" "$out"
 
 out="$(gitlab --set lanHost=git.example.test)"
 grep -q 'Host(`git.example.test`)' <<<"$out" && grep -q 'kind: IngressRoute' <<<"$out"
 is "a LAN host name makes a Traefik route" "$?" "$out"
 
+out="$(helm template b "$repo/bootstrap" --set tailscale.helmValues.proxyGroup.name=other --set gitlab.helmValues.tailnet.proxyGroup=other2 | grep -E 'proxyGroup|name: (ci-proxy|other)')"
+! grep -qE 'other' <<<"$out"
+is "an override cannot split the ProxyGroup name between the operator and GitLab" "$?" "$out"
+! gitlab --set tailnet.enabled=true --set externalUrl=https://git_ci.example.ts.net >/dev/null 2>&1 && ! gitlab --set tailnet.enabled=true --set externalUrl=git-ci.example.ts.net >/dev/null 2>&1
+is "a tailnet Ingress refuses an externalUrl without a scheme or with a bad name" "$?"
 out="$(helm template b "$repo/bootstrap" --set gitlab.externalUrl=https://git-ci.example.ts.net --set gitlab.lanHost=git.example.test)"
 grep -q 'externalUrl: https://git-ci.example.ts.net' <<<"$out" && grep -q 'lanHost: git.example.test' <<<"$out" && grep -q 'enabled: true' <<<"$out"
 is "the bootstrap passes the tailnet address, the LAN name and the tailnet switch to GitLab" "$?" "$out"

@@ -15,7 +15,7 @@ spec:
     path: apps/gitlab
     helm:
       valuesObject:
-        {{- mergeOverwrite (dict "externalUrl" .Values.gitlab.externalUrl "lanHost" .Values.gitlab.lanHost "tailnet" (merge (dict "proxyGroup" .Values.tailscale.proxyGroup) .Values.gitlab.tailnet) "nodeSelector" .Values.gitlab.nodeSelector "tolerations" .Values.gitlab.tolerations) .Values.gitlab.helmValues | toYaml | nindent 8 }}
+        {{- mergeOverwrite (dict "externalUrl" .Values.gitlab.externalUrl "lanHost" .Values.gitlab.lanHost "tailnet" (deepCopy .Values.gitlab.tailnet) "nodeSelector" .Values.gitlab.nodeSelector "tolerations" .Values.gitlab.tolerations) .Values.gitlab.helmValues (dict "tailnet" (dict "proxyGroup" .Values.tailscale.proxyGroup)) | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: gitlab
