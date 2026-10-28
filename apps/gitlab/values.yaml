@@ -15,7 +15,9 @@ externalUrl: http://gitlab.example
 # tags own and auto-approve that Service (README).
 tailnet:
   enabled: false
-  proxyGroup: gitlab
+  proxyGroup: ci-proxy
+  # Two proxy pods, so one can restart while the other serves.
+  replicas: 2
   tags:
     - tag:ci
 

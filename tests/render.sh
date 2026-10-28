@@ -32,11 +32,13 @@ out="$(gitlab)"
 is "by default GitLab has no Ingress and no LAN route" "$?" "$out"
 
 out="$(gitlab --set tailnet.enabled=true --set externalUrl=https://git-ci.example.ts.net)"
-grep -q 'ingressClassName: tailscale' <<<"$out" && grep -q 'tailscale.com/proxy-group: gitlab' <<<"$out" \
+grep -q 'ingressClassName: tailscale' <<<"$out" && grep -q 'tailscale.com/proxy-group: ci-proxy' <<<"$out" \
   && ! grep -q 'tailscale.com/hostname' <<<"$out" && grep -A2 'tls:' <<<"$out" | grep -q -- '- git-ci'
 is "the tailnet Ingress takes its host name from the first label of externalUrl, through a ProxyGroup, and asks for a certificate" "$?" "$out"
 grep -q 'kind: ProxyGroup' <<<"$out" && grep -q 'type: ingress' <<<"$out" && grep -A1 'tags:' <<<"$out" | grep -q -- '- tag:ci'
 is "a ProxyGroup of type ingress carries the tag" "$?" "$out"
+grep -q 'replicas: 2' <<<"$out" && grep -q 'hostnamePrefix: ci-proxy' <<<"$out"
+is "the ProxyGroup runs two pods named ci-proxy-0 and ci-proxy-1" "$?" "$out"
 ! grep -q 'kind: ProxyGroup' <<<"$(gitlab)"
 is "without the tailnet switch there is no ProxyGroup" "$?"
 
