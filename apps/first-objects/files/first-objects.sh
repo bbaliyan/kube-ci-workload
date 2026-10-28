@@ -112,7 +112,9 @@ fi
 
 if ! have_secret "$GITLAB_NAMESPACE" gitlab-exporter; then
   expires="$(date -u -d '+364 days' +%Y-%m-%d)"
-  exporter_token="$(api POST "/groups/$group_id/access_tokens"     --data-urlencode name=pipeline-exporter --data-urlencode "expires_at=$expires" --data-urlencode access_level=20     --data-urlencode "scopes[]=read_api" --data-urlencode "scopes[]=read_repository" | jq -er .token)" || fail "cannot create the exporter token"
+  exporter_token="$(api POST "/groups/$group_id/access_tokens" \
+    --data-urlencode name=pipeline-exporter --data-urlencode "expires_at=$expires" --data-urlencode access_level=20 \
+    --data-urlencode "scopes[]=read_api" --data-urlencode "scopes[]=read_repository" | jq -er .token)" || fail "cannot create the exporter token"
   put_secret "$GITLAB_NAMESPACE" gitlab-exporter "gitlabToken=$exporter_token"
   unset exporter_token
   echo "first-objects: saved Secret gitlab-exporter"

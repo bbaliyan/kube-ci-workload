@@ -71,6 +71,7 @@ echo "curl $*" >>"$STATE/curl.log"
 case "$*" in
   *"--request GET"*"/groups/mirror"*)
     if [ -n "${GROUP_EXISTS:-}" ]; then echo '{"id":7}'; else echo '{"message":"404 Group Not Found"}' >&2; exit 22; fi ;;
+  *"--request POST"*"/groups/7/access_tokens"*"name=pipeline-exporter"*) echo '{"token":"EXPORTERTOKEN345"}' ;;
   *"--request POST"*"/groups/7/access_tokens"*) echo '{"token":"MIRRORTOKEN789"}' ;;
   *"--request POST"*"/groups"*) echo '{"id":7}' ;;
   *"--request POST"*"/user/runners"*) echo '{"token":"glrt-RUNNERTOKEN012"}' ;;
@@ -93,7 +94,7 @@ run() { # case name, extra env assignments...
   code=$?
 }
 no_secret_in() { # text: none of the token values is in it
-  ! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|RUNNERTOKEN012' <<<"$1"
+  ! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012' <<<"$1"
 }
 
 # ---- a new GitLab ------------------------------------------------------------------
@@ -106,7 +107,9 @@ grep -q '^gitlab-root username password' "$case_dir/applied" && grep -q '^gitlab
 is "each Secret has the keys the other apps read" "$?" "$(cat "$case_dir/applied")"
 no_secret_in "$out"
 is "no token or password is printed" "$?" "$out"
-! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|RUNNERTOKEN012' "$case_dir/curl.log"
+grep -q 'create secret generic gitlab-exporter --from-literal=gitlabToken=EXPORTERTOKEN345' "$case_dir/kubectl.log"
+is "the exporter Secret holds the exporter token, not the mirror token" "$?" "$(cat "$case_dir/kubectl.log")"
+! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012' "$case_dir/curl.log"
 is "no token is on a curl command line" "$?" "$(cat "$case_dir/curl.log")"
 [ "$(grep -c 'PRIVATE-TOKEN: ADMINTOKEN456' "$case_dir/curl.stdin")" -ge 3 ]
 is "the admin token reaches curl through stdin" "$?" "$(cat "$case_dir/curl.stdin")"

@@ -28,9 +28,12 @@ tests:
       - matchRegex:
           path: data["config.yml"]
           pattern: "name: mirror"
+  - it: emits a 0 for every status that is not current
+    template: charts/gitlab-ci-pipelines-exporter/templates/configmap.yaml
+    asserts:
       - matchRegex:
           path: data["config.yml"]
-          pattern: "regexp: \^\(\?:main\|master\)\$"
+          pattern: "output_sparse_status_metrics: false"
   - it: is scraped by the platform Prometheus
     template: charts/gitlab-ci-pipelines-exporter/templates/servicemonitor.yaml
     asserts:
