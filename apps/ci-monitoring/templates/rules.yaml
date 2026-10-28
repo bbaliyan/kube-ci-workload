@@ -1,0 +1,8 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ci-kpis
+  labels:
+    release: prometheus
+spec:
+{{ .Files.Get "rules/kpis.yaml" | indent 2 }}

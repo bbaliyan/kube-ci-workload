@@ -21,5 +21,11 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    # The PodMonitor CRD comes from the platform, which may still be starting.
+    retry:
+      limit: 10
+      backoff:
+        duration: 1m
+        maxDuration: 10m
     syncOptions:
       - CreateNamespace=true

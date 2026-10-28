@@ -1,0 +1,13 @@
+# The chart's own PodMonitor sets a "release" label itself, so the label Prometheus selects on would be a duplicate key.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  podMetricsEndpoints:
+    - port: metrics

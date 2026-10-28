@@ -1,0 +1,69 @@
+# promtool test rules tests/kpis.test.yaml
+rule_files:
+  - ../apps/ci-monitoring/rules/kpis.yaml
+evaluation_interval: 1m
+
+tests:
+  - name: the share of time a branch was green
+    interval: 1m
+    input_series:
+      - series: 'gitlab_ci_pipeline_status{project="mirror/app", ref="main", status="success"}'
+        values: "1 1 0 0"
+      - series: 'gitlab_ci_pipeline_status{project="mirror/app", ref="main", status="failed"}'
+        values: "0 0 1 1"
+    promql_expr_test:
+      - expr: ci:pipeline_green:ratio_7d
+        eval_time: 3m
+        exp_samples:
+          - labels: 'ci:pipeline_green:ratio_7d{project="mirror/app", ref="main"}'
+            value: 0.5
+
+  - name: push to result is the wait plus the run
+    interval: 1m
+    input_series:
+      - series: 'gitlab_ci_pipeline_queued_duration_seconds{project="mirror/app", ref="main"}'
+        values: "30"
+      - series: 'gitlab_ci_pipeline_duration_seconds{project="mirror/app", ref="main"}'
+        values: "120"
+    promql_expr_test:
+      - expr: ci:pipeline_push_to_result:seconds
+        eval_time: 0m
+        exp_samples:
+          - labels: 'ci:pipeline_push_to_result:seconds{project="mirror/app", ref="main"}'
+            value: 150
+
+  - name: pipeline duration quantiles
+    interval: 1m
+    input_series:
+      - series: 'gitlab_ci_pipeline_duration_seconds{project="mirror/app", ref="main"}'
+        values: "60 120 180"
+    promql_expr_test:
+      - expr: ci:pipeline_duration:seconds_p50_7d
+        eval_time: 2m
+        exp_samples:
+          - labels: 'ci:pipeline_duration:seconds_p50_7d{project="mirror/app", ref="main"}'
+            value: 120
+      - expr: round(ci:pipeline_duration:seconds_p95_7d)
+        eval_time: 2m
+        exp_samples:
+          - labels: '{project="mirror/app", ref="main"}'
+            value: 174
+
+  - name: job queue time when every job waited under 10 seconds
+    interval: 1m
+    input_series:
+      - series: 'gitlab_runner_job_queue_duration_seconds_bucket{le="10"}'
+        values: "0+10x60"
+      - series: 'gitlab_runner_job_queue_duration_seconds_bucket{le="+Inf"}'
+        values: "0+10x60"
+    promql_expr_test:
+      - expr: ci:job_queue:seconds_p50_1h
+        eval_time: 60m
+        exp_samples:
+          - labels: "ci:job_queue:seconds_p50_1h"
+            value: 5
+      - expr: ci:job_queue:seconds_p95_1h
+        eval_time: 60m
+        exp_samples:
+          - labels: "ci:job_queue:seconds_p95_1h"
+            value: 9.5

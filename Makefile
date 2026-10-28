@@ -16,9 +16,9 @@ BASE_REF ?= $(shell git rev-parse --verify --quiet origin/main)
 SCRIPTS := $(shell git ls-files '*.sh') .githooks/pre-commit
 
 .PHONY: test-commit test-fast test-integration hooks lint-scripts lint-yaml \
-	lint-pipelines lint-renovate charts test-scripts secrets commit-messages
+	lint-pipelines lint-renovate charts test-charts test-rules test-scripts secrets commit-messages
 
-test-commit: test-fast lint-scripts lint-yaml lint-pipelines lint-renovate charts test-scripts commit-messages
+test-commit: test-fast lint-scripts lint-yaml lint-pipelines lint-renovate charts test-charts test-rules test-scripts commit-messages
 
 test-fast: secrets
 
@@ -46,7 +46,18 @@ charts: export KUBECONFORM_IGNORE_MISSING_SCHEMAS = 1
 charts:
 	helm repo add gitlab https://charts.gitlab.io --force-update >/dev/null
 	helm repo add tailscale https://pkgs.tailscale.com/helmcharts --force-update >/dev/null
+	helm repo add visonneau https://charts.visonneau.fr --force-update >/dev/null
 	$(CHECKS)/helm-kubeconform.sh .
+
+# What the charts render, as declared tests (helm-unittest).
+test-charts:
+	helm unittest apps/gitlab-runner apps/pipeline-exporter apps/ci-monitoring
+
+# The KPI rules, against made-up series (promtool), and the dashboards as JSON.
+test-rules:
+	promtool check rules apps/ci-monitoring/rules/kpis.yaml
+	promtool test rules tests/kpis.test.yaml
+	jq empty apps/ci-monitoring/dashboards/*.json
 
 test-scripts:
 	tests/first-objects.sh

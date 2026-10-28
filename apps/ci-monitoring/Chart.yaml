@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ci-monitoring
+description: Grafana dashboards of the CI cluster, loaded by the Grafana sidecar
+type: application
+version: 0.1.0

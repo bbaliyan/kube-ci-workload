@@ -1,0 +1,39 @@
+suite: CI monitoring
+tests:
+  - it: loads the KPI rules into the platform Prometheus
+    template: templates/rules.yaml
+    asserts:
+      - isKind:
+          of: PrometheusRule
+      - equal:
+          path: metadata.labels.release
+          value: prometheus
+      - equal:
+          path: spec.groups[0].name
+          value: ci-kpis
+  - it: shows every KPI on the pipelines dashboard
+    template: templates/dashboards.yaml
+    documentSelector:
+      path: metadata.name
+      value: grafana-dashboard-ci-pipelines
+    asserts:
+      - equal:
+          path: metadata.labels.grafana_dashboard
+          value: "1"
+      - matchRegex:
+          path: data["ci-pipelines.json"]
+          pattern: "ci:pipeline_green:ratio_7d"
+      - matchRegex:
+          path: data["ci-pipelines.json"]
+          pattern: "ci:pipeline_push_to_result:seconds"
+      - matchRegex:
+          path: data["ci-pipelines.json"]
+          pattern: "ci:pipeline_duration:seconds_p95_7d"
+      - matchRegex:
+          path: data["ci-pipelines.json"]
+          pattern: "ci:job_queue:seconds_p95_1h"
+  - it: has one dashboard per file
+    template: templates/dashboards.yaml
+    asserts:
+      - hasDocuments:
+          count: 3

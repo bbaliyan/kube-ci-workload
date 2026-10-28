@@ -42,6 +42,12 @@ mirrorSync:
     kube-compute.io/node-group: general
   helmValues: {}
 
+# Exports the status and durations of the mirrored projects' pipelines to Prometheus.
+pipelineExporter:
+  nodeSelector:
+    kube-compute.io/node-group: general
+  helmValues: {}
+
 # The operator that puts the GitLab Ingress on the tailnet. kube-homelab delivers its OAuth client.
 tailscale:
   # The ProxyGroup that serves every tailnet Ingress. GitLab and the later apps use this name.

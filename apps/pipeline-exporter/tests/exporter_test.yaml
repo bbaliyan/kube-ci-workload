@@ -1,0 +1,42 @@
+suite: pipeline exporter
+templates:
+  - charts/gitlab-ci-pipelines-exporter/templates/deployment.yaml
+  - charts/gitlab-ci-pipelines-exporter/templates/configmap.yaml
+  - charts/gitlab-ci-pipelines-exporter/templates/secret.yaml
+  - charts/gitlab-ci-pipelines-exporter/templates/servicemonitor.yaml
+capabilities:
+  apiVersions:
+    - monitoring.coreos.com/v1
+tests:
+  - it: reads its GitLab token from the Secret that first-objects makes
+    template: charts/gitlab-ci-pipelines-exporter/templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GCPE_GITLAB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: gitlab-exporter
+                key: gitlabToken
+  - it: reads the mirror group on its default branch through the in-cluster Service
+    template: charts/gitlab-ci-pipelines-exporter/templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.yml"]
+          pattern: "url: http://gitlab.gitlab.svc.cluster.local"
+      - matchRegex:
+          path: data["config.yml"]
+          pattern: "name: mirror"
+  - it: emits a 0 for every status that is not current
+    template: charts/gitlab-ci-pipelines-exporter/templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.yml"]
+          pattern: "output_sparse_status_metrics: false"
+  - it: is scraped by the platform Prometheus
+    template: charts/gitlab-ci-pipelines-exporter/templates/servicemonitor.yaml
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: prometheus

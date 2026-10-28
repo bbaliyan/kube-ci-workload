@@ -71,6 +71,7 @@ echo "curl $*" >>"$STATE/curl.log"
 case "$*" in
   *"--request GET"*"/groups/mirror"*)
     if [ -n "${GROUP_EXISTS:-}" ]; then echo '{"id":7}'; else echo '{"message":"404 Group Not Found"}' >&2; exit 22; fi ;;
+  *"--request POST"*"/groups/7/access_tokens"*"name=pipeline-exporter"*) echo '{"token":"EXPORTERTOKEN345"}' ;;
   *"--request POST"*"/groups/7/access_tokens"*) echo '{"token":"MIRRORTOKEN789"}' ;;
   *"--request POST"*"/groups"*) echo '{"id":7}' ;;
   *"--request POST"*"/user/runners"*) echo '{"token":"glrt-RUNNERTOKEN012"}' ;;
@@ -93,20 +94,22 @@ run() { # case name, extra env assignments...
   code=$?
 }
 no_secret_in() { # text: none of the token values is in it
-  ! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|RUNNERTOKEN012' <<<"$1"
+  ! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012' <<<"$1"
 }
 
 # ---- a new GitLab ------------------------------------------------------------------
 SECRETS="" run fresh
 [ "$code" -eq 0 ] && grep -q 'first-objects: done' <<<"$out"
 is "a new GitLab gets its first objects" "$?" "exit $code: $out"
-[ "$(awk '{print $1}' "$case_dir/applied" | sort | tr '\n' ' ')" = "gitlab-mirror gitlab-root gitlab-runner " ]
-is "the three Secrets are saved" "$?" "$(cat "$case_dir/applied")"
-grep -q '^gitlab-root username password' "$case_dir/applied" && grep -q '^gitlab-mirror token' "$case_dir/applied" && grep -q '^gitlab-runner runner-token runner-registration-token' "$case_dir/applied"
+[ "$(awk '{print $1}' "$case_dir/applied" | sort | tr '\n' ' ')" = "gitlab-exporter gitlab-mirror gitlab-root gitlab-runner " ]
+is "the four Secrets are saved" "$?" "$(cat "$case_dir/applied")"
+grep -q '^gitlab-root username password' "$case_dir/applied" && grep -q '^gitlab-mirror token' "$case_dir/applied" && grep -q '^gitlab-runner runner-token runner-registration-token' "$case_dir/applied" && grep -q '^gitlab-exporter gitlabToken' "$case_dir/applied"
 is "each Secret has the keys the other apps read" "$?" "$(cat "$case_dir/applied")"
 no_secret_in "$out"
 is "no token or password is printed" "$?" "$out"
-! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|RUNNERTOKEN012' "$case_dir/curl.log"
+grep -q 'create secret generic gitlab-exporter --from-literal=gitlabToken=EXPORTERTOKEN345' "$case_dir/kubectl.log"
+is "the exporter Secret holds the exporter token, not the mirror token" "$?" "$(cat "$case_dir/kubectl.log")"
+! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012' "$case_dir/curl.log"
 is "no token is on a curl command line" "$?" "$(cat "$case_dir/curl.log")"
 [ "$(grep -c 'PRIVATE-TOKEN: ADMINTOKEN456' "$case_dir/curl.stdin")" -ge 3 ]
 is "the admin token reaches curl through stdin" "$?" "$(cat "$case_dir/curl.stdin")"
@@ -114,22 +117,22 @@ grep -q -- '--request DELETE .*personal_access_tokens/self' "$case_dir/curl.log"
 is "the admin token is revoked at the end" "$?" "$(cat "$case_dir/curl.log")"
 grep -q 'wait --for=condition=Ready pod/gitlab-0' "$case_dir/kubectl.log"
 is "it waits for the GitLab pod" "$?" "$(cat "$case_dir/kubectl.log")"
-grep -q 'visibility=private' "$case_dir/curl.log" && grep -q 'access_level=40' "$case_dir/curl.log" && grep -q 'run_untagged=true' "$case_dir/curl.log"
-is "the group is private, the mirror token is a maintainer and the runner takes untagged jobs" "$?" "$(cat "$case_dir/curl.log")"
+grep -q 'access_level=20' "$case_dir/curl.log" && grep -q 'scopes\[\]=read_api' "$case_dir/curl.log" && grep -q 'visibility=private' "$case_dir/curl.log" && grep -q 'access_level=40' "$case_dir/curl.log" && grep -q 'run_untagged=true' "$case_dir/curl.log"
+is "the group is private, the exporter token only reads, the mirror token is a maintainer and the runner takes untagged jobs" "$?" "$(cat "$case_dir/curl.log")"
 grep -q 'if true' "$case_dir/rails.code"
 is "a new GitLab gets a new root password" "$?" "$(cat "$case_dir/rails.code")"
 
 # ---- run again -------------------------------------------------------------------------
-SECRETS="gitlab-root gitlab-mirror gitlab-runner" run again GROUP_EXISTS=1
+SECRETS="gitlab-root gitlab-mirror gitlab-exporter gitlab-runner" run again GROUP_EXISTS=1
 [ "$code" -eq 0 ] && [ ! -e "$case_dir/applied" ] && ! grep -q -- '--request POST' "$case_dir/curl.log" && grep -q -- '--request PUT .*/application/settings' "$case_dir/curl.log"
-is "with all three Secrets present it makes no object and still applies the settings" "$?" "exit $code: $out"
+is "with all four Secrets present it makes no object and still applies the settings" "$?" "exit $code: $out"
 
 # ---- partial state -------------------------------------------------------------------------
 SECRETS="gitlab-root" run partial
 [ "$code" -eq 0 ] && grep -q 'if false' "$case_dir/rails.code" && ! grep -q '^gitlab-root' "$case_dir/applied"
 is "with the root Secret present it keeps the root password" "$?" "exit $code: $out"
-grep -q '^gitlab-mirror' "$case_dir/applied" && grep -q '^gitlab-runner' "$case_dir/applied"
-is "with the root Secret present it still saves the other two" "$?" "$(cat "$case_dir/applied")"
+grep -q '^gitlab-mirror' "$case_dir/applied" && grep -q '^gitlab-exporter' "$case_dir/applied" && grep -q '^gitlab-runner' "$case_dir/applied"
+is "with the root Secret present it still saves the other three" "$?" "$(cat "$case_dir/applied")"
 
 grep -q -- '--request PUT .*/application/settings .*auto_devops_enabled=false' "$case_dir/curl.log" 2>/dev/null
 is "Auto DevOps is turned off for the instance" "$?" "$(head -8 "$case_dir/curl.log" 2>/dev/null)"

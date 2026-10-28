@@ -1,0 +1,65 @@
+{
+  "title": "CI capacity",
+  "uid": "ci-capacity",
+  "tags": ["ci"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Job pod memory against its limit",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 }, "overrides": [] },
+      "targets": [ {
+        "refId": "A", "legendFormat": "{{pod}}",
+        "expr": "max by (pod) (container_memory_working_set_bytes{namespace=\"gitlab-runner\", container=\"build\"} / on (namespace, pod, container) kube_pod_container_resource_limits{namespace=\"gitlab-runner\", container=\"build\", resource=\"memory\"})"
+      } ]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Out-of-memory kills in 24 hours",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "none", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "targets": [ {
+        "refId": "A",
+        "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"gitlab|gitlab-runner\"}[24h]) * on (namespace, pod, container) group_left () (kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1)) or vector(0)"
+      } ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "GitLab and runner memory",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "legendFormat": "GitLab", "expr": "sum(container_memory_working_set_bytes{namespace=\"gitlab\", pod=~\"gitlab-.*\", container=\"gitlab\"})" },
+        { "refId": "B", "legendFormat": "runner manager", "expr": "sum(container_memory_working_set_bytes{namespace=\"gitlab-runner\", pod=~\"gitlab-runner-.*\", container!=\"\"})" }
+      ]
+    },
+    {
+      "id": 4, "type": "gauge", "title": "GitLab data volume used",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.85 } ] } }, "overrides": [] },
+      "targets": [ {
+        "refId": "A",
+        "expr": "max(kubelet_volume_stats_used_bytes{namespace=\"gitlab\"} / kubelet_volume_stats_capacity_bytes{namespace=\"gitlab\"})"
+      } ]
+    },
+    {
+      "id": 5, "type": "stat", "title": "GitLab data growth per day (7-day trend)",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [ {
+        "refId": "A",
+        "expr": "max(deriv(kubelet_volume_stats_used_bytes{namespace=\"gitlab\"}[7d])) * 86400"
+      } ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Node root disk used",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 }, "overrides": [] },
+      "targets": [ {
+        "refId": "A", "legendFormat": "{{instance}}",
+        "expr": "1 - node_filesystem_avail_bytes{mountpoint=\"/\", fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/\", fstype!~\"tmpfs|overlay\"}"
+      } ]
+    }
+  ]
+}

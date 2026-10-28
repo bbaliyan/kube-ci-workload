@@ -11,6 +11,8 @@ gitlab-runner:
   jobImageTag: "3.24"
   rbac:
     create: true
+  metrics:
+    enabled: true
   nodeSelector: {}
   runners:
     # The first-objects Job writes this Secret. It holds the token of the runner it created.
