@@ -51,7 +51,7 @@ charts:
 
 # What the charts render, as declared tests (helm-unittest).
 test-charts:
-	helm unittest apps/gitlab-runner apps/pipeline-exporter apps/ci-monitoring
+	helm unittest apps/gitlab-runner apps/pipeline-exporter apps/ci-monitoring apps/tailnet-ingresses
 
 # The KPI rules, against made-up series (promtool), and the dashboards as JSON.
 test-rules:

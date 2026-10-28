@@ -1,0 +1,43 @@
+suite: tailnet ingresses
+templates:
+  - templates/ingresses.yaml
+tests:
+  - it: serves Argo CD as argocd-ci, in its own namespace, through the ProxyGroup
+    documentSelector:
+      path: metadata.name
+      value: argocd-ci
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: argocd
+      - equal:
+          path: metadata.annotations["tailscale.com/proxy-group"]
+          value: ci-proxy
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: argocd-ci
+      - equal:
+          path: spec.defaultBackend.service.name
+          value: argocd-server
+  - it: serves Grafana as grafana-ci, in its own namespace, through the ProxyGroup
+    documentSelector:
+      path: metadata.name
+      value: grafana-ci
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: prometheus
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: grafana-ci
+      - equal:
+          path: spec.defaultBackend.service.name
+          value: prometheus-grafana
+  - it: follows the ProxyGroup name that is set
+    set:
+      proxyGroup: other
+    asserts:
+      - equal:
+          path: metadata.annotations["tailscale.com/proxy-group"]
+          value: other
+        documentIndex: 0

@@ -48,6 +48,10 @@ pipelineExporter:
     kube-compute.io/node-group: general
   helmValues: {}
 
+# Tailnet names for Argo CD (argocd-ci) and Grafana (grafana-ci). The names are in apps/tailnet-ingresses.
+tailnetIngresses:
+  helmValues: {}
+
 # The operator that puts the GitLab Ingress on the tailnet. kube-homelab delivers its OAuth client.
 tailscale:
   # The ProxyGroup that serves every tailnet Ingress. GitLab and the later apps use this name.

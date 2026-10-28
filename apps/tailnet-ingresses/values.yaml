@@ -1,0 +1,14 @@
+# The ProxyGroup of the Tailscale operator app. The bootstrap sets it.
+proxyGroup: ci-proxy
+
+# One tailnet name per web interface. The name is the host name on the tailnet.
+# Each Service must be plain HTTP: the ProxyGroup ends TLS.
+ingresses:
+  - name: argocd-ci
+    namespace: argocd
+    service: argocd-server
+    port: 80
+  - name: grafana-ci
+    namespace: prometheus
+    service: prometheus-grafana
+    port: 80
