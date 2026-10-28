@@ -1,6 +1,9 @@
 {{- if .Values.tailnet.enabled }}
 # Needs the Tailscale operator (apps/tailscale-operator). The ProxyGroup serves this host name as a
 # Tailscale Service on the tailnet and ends TLS with a certificate from Tailscale.
+# An HTTPS-only Service is advertised only after its certificate Secret holds a certificate, and the
+# proxy issues the certificate only after the Service is advertised. The HTTP endpoint breaks the loop.
+# It adds port 80 to the Service. The tailnet policy grants only tcp:443, so nobody can reach port 80.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -9,6 +12,7 @@ metadata:
     app.kubernetes.io/name: gitlab
   annotations:
     tailscale.com/proxy-group: {{ .Values.tailnet.proxyGroup }}
+    tailscale.com/http-endpoint: enabled
 spec:
   ingressClassName: tailscale
   defaultBackend:

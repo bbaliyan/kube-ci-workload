@@ -1,5 +1,8 @@
 # Needs the Tailscale operator (apps/tailscale-operator). An Ingress must sit in the namespace of
 # its Service, so each one names its own.
+# An HTTPS-only Service is advertised only after its certificate Secret holds a certificate, and the
+# proxy issues the certificate only after the Service is advertised. The HTTP endpoint breaks the loop.
+# It adds port 80 to the Service. The tailnet policy grants only tcp:443, so nobody can reach port 80.
 {{- range .Values.ingresses }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -9,6 +12,7 @@ metadata:
   namespace: {{ .namespace }}
   annotations:
     tailscale.com/proxy-group: {{ $.Values.proxyGroup }}
+    tailscale.com/http-endpoint: enabled
 spec:
   ingressClassName: tailscale
   defaultBackend:
