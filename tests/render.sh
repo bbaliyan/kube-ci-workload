@@ -42,12 +42,12 @@ tailscale="$(mktemp -d)"
 trap 'rm -rf "$tailscale"' EXIT
 cp -r "$repo/apps/tailscale-operator/Chart.yaml" "$repo/apps/tailscale-operator/Chart.lock" "$repo/apps/tailscale-operator/values.yaml" "$repo/apps/tailscale-operator/templates" "$tailscale/"
 helm repo add tailscale https://pkgs.tailscale.com/helmcharts --force-update >/dev/null && helm dependency build "$tailscale" >/dev/null
-out="$(helm template ts "$tailscale" --namespace tailscale)"
+out="$(helm template ts "$tailscale" --namespace tailscale --show-only templates/proxygroup.yaml)"
 grep -q 'kind: ProxyGroup' <<<"$out" && grep -q 'type: ingress' <<<"$out" && grep -q 'name: ci-proxy' <<<"$out" && grep -A1 'tags:' <<<"$out" | grep -q -- '- tag:ci'
 is "the operator app makes a ProxyGroup of type ingress that carries the tag" "$?" "$out"
 grep -q 'replicas: 2' <<<"$out" && grep -q 'hostnamePrefix: ci-proxy' <<<"$out"
 is "the ProxyGroup runs two pods named ci-proxy-0 and ci-proxy-1" "$?" "$out"
-! grep -q 'kind: ProxyGroup' <<<"$(helm template ts "$tailscale" --set proxyGroup.enabled=false)"
+! helm template ts "$tailscale" --set proxyGroup.enabled=false --show-only templates/proxygroup.yaml 2>/dev/null | grep -q 'kind: ProxyGroup'
 is "the ProxyGroup can be turned off" "$?"
 
 out="$(gitlab --set lanHost=git.example.test)"
