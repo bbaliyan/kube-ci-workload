@@ -1,80 +1,55 @@
 # kube-ci-workload
 
-The CI workloads of the homelab `ci` cluster, as Argo CD apps: GitLab, its first objects, and the GitLab Runner. The cluster installs them from `main`, next to [kube-platform](https://github.com/bbaliyan/kube-platform).
-
-## Layout
+The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster installs them next to [kube-platform](https://github.com/bbaliyan/kube-platform).
 
 | Directory | Purpose |
 |---|---|
-| `bootstrap/` | A Helm chart of Argo CD Applications, one for each app below. Point one Application at it. |
-| `apps/gitlab/` | GitLab CE from GitLab's own Docker image, as one StatefulSet. Every default is on. |
-| `apps/first-objects/` | A Job that creates the first GitLab objects and the Secrets that the other apps read. |
-| `apps/gitlab-runner/` | The GitLab Runner chart with this cluster's settings. |
-| `apps/mirror-sync/` | One pod that copies repositories from GitHub into the `mirror` group every 60 seconds. |
-| `apps/tailscale-operator/` | The Tailscale operator, which puts the GitLab Ingress on the tailnet. |
-| `tests/` | Tests for the scripts and for what the charts render. |
+| `bootstrap/` | A Helm chart of Argo CD Applications, one per app, in sync waves. |
+| `apps/gitlab/` | GitLab CE from GitLab's Docker image, as one StatefulSet. |
+| `apps/first-objects/` | A Job that creates the first GitLab objects and the Secrets below. |
+| `apps/gitlab-runner/` | The GitLab Runner chart. |
+| `apps/mirror-sync/` | One pod that mirrors GitHub repositories into the `mirror` group every 60 seconds. |
+| `apps/tailscale-operator/` | The Tailscale operator and the ProxyGroup that serves the tailnet names. |
 
-## How it works
+## Secrets
 
-Argo CD installs the apps in this order, one sync wave each:
-
-1. `gitlab` and `tailscale-operator`: the GitLab StatefulSet with its Service and Ingress, and the operator. The first start of GitLab takes several minutes.
-2. `first-objects`: when GitLab is ready, a Job creates the `mirror` group, a token that pushes to it, a runner and a new root password. It saves them as Secrets and then revokes its own admin token. If the Secrets exist, it does nothing.
-3. `gitlab-runner`: the runner reads its token from the Secret.
-4. `mirror-sync`: one pod runs `loop.sh`, which runs `sync.sh` every 60 seconds (`intervalSeconds`). Each run compares the refs on GitHub and GitLab and pushes only what changed, so a quiet run is cheap. One pod, with no CronJob, means no new pod every minute and no overlapping runs. To mirror a private repository, the consumer sets `repos` and `sourceBase` and makes the Secret `github-source`.
-
-| Secret | Namespace | Keys | Made by | Read by |
-|---|---|---|---|---|
-| `gitlab-root` | `gitlab` | `username`, `password` | `first-objects` | You, to sign in |
-| `gitlab-mirror` | `gitlab` | `token` | `first-objects` | The mirror sync |
-| `gitlab-runner` | `gitlab-runner` | `runner-token`, `runner-registration-token` | `first-objects` | The runner |
-| `github-source` | `gitlab` | `token` | `kube-homelab` | The mirror sync (a read-only GitHub token) |
-| `operator-oauth` | `tailscale` | `client_id`, `client_secret` | `kube-homelab` | The Tailscale operator |
-
-The runner and its job pods reach GitLab through the in-cluster Service, so they need no DNS name.
-
-## Addresses
-
-- **The tailnet name is canonical.** `gitlab.externalUrl` is `https://git-ci.<tailnet>.ts.net`. GitLab builds its links and clone URLs from it. A Tailscale ProxyGroup serves the first label of that name, `git-ci`, as a Tailscale Service, ends TLS with a certificate from Tailscale, and passes plain HTTP to GitLab. The name belongs to the Service, not to a proxy device, so a device that a destroyed cluster left in the tailnet cannot turn the name into `git-ci-1`. A rebuilt cluster takes the same Service back. GitLab is set to listen on HTTP and to trust the proxy's `X-Forwarded-Proto`.
-- **The LAN name is a second door.** `gitlab.lanHost` is a Traefik route for git and the API over plain HTTP. Sign-in does not work on it, because GitLab sets cookies for HTTPS.
-- The proxies are the ProxyGroup `ci-proxy` of the operator app, two pods that join the tailnet as `ci-proxy-0` and `ci-proxy-1` with the tag `tag:ci`. Every tailnet Ingress of the cluster can use the group. The tailnet policy decides who can reach it.
-- The tailnet policy must also let the operator own `tag:ci`, and must auto-approve the Service: an entry for `svc:git-ci` under `autoApprovers.services` with `tag:ci`. The operator's OAuth client needs the Services write scope, next to Devices Core and Auth Keys. Tailscale Services must be available on your plan.
-- Each rebuild leaves the old proxy and operator devices offline in the tailnet, and the new pods join as `ci-proxy-0-1` and so on. Only the Service names stay stable. The leftovers are harmless. Remove them in the admin console when you want a tidy list.
-- The tailnet policy must also grant access to the Services: allow your user on `tag:ci` (which the Services carry) on port 443.
+| Secret | Namespace | Keys | Made by |
+|---|---|---|---|
+| `gitlab-root` | `gitlab` | `username`, `password` | `first-objects` |
+| `gitlab-mirror` | `gitlab` | `token` | `first-objects` |
+| `gitlab-runner` | `gitlab-runner` | `runner-token`, `runner-registration-token` | `first-objects` |
+| `github-source` | `gitlab` | `token` (read-only GitHub token) | the consumer |
+| `operator-oauth` | `tailscale` | `client_id`, `client_secret` | the consumer |
 
 ## Use it
 
-The cluster owner creates one Argo CD Application with `path: bootstrap` and this repository. The defaults in `bootstrap/values.yaml` are placeholders. You must set `gitlab.externalUrl` to your tailnet name with `helm.valuesObject`. You can also set `gitlab.lanHost` to add a plain HTTP route on the LAN.
+Point one Argo CD Application at `bootstrap/` and override the placeholders in `bootstrap/values.yaml`:
 
-The GitLab node is tainted `dedicated=gitlab` and labelled `kube-compute.io/node-group=gitlab`. Nothing else runs there.
+- `gitlab.externalUrl`: `https://git-ci.<tailnet>.ts.net`. GitLab builds its links from it, and the tailnet host name is its first label.
+- `gitlab.lanHost`: an optional plain HTTP route on the LAN. Sign-in does not work on it.
+- `mirrorSync.helmValues`: `sourceBase` and `repos`.
+
+The tailnet policy needs:
+
+- `tag:ci`, owned by the operator.
+- An `autoApprovers.services` entry for `svc:git-ci` with `tag:ci`.
+- A grant to `svc:git-ci` on `tcp:443`.
+- The Services write scope on the operator's OAuth client.
 
 To sign in as `root`:
 
 1. Run `kubectl -n gitlab get secret gitlab-root -o jsonpath='{.data.password}' | base64 -d`.
-2. Open the address in `gitlab.externalUrl`.
-3. Sign in as `root` with that password.
+2. Open the address in `gitlab.externalUrl` and sign in as `root`.
 
 ## Upgrade GitLab
 
-GitLab has required upgrade stops. Move one minor release at a time. Renovate opens the PR but does not merge it.
+GitLab has required upgrade stops. Move one minor release at a time. Renovate opens the PR and does not merge it.
 
-1. Read [the upgrade paths](https://docs.gitlab.com/update/upgrade_paths/) for the next stop.
-2. Change `image.tag` in `apps/gitlab/values.yaml` to that release.
+1. Read [the upgrade paths](https://docs.gitlab.com/update/upgrade_paths/).
+2. Change `image.tag` in `apps/gitlab/values.yaml`.
 3. Change the `gitlab-runner` chart version in `apps/gitlab-runner/Chart.yaml` to the matching minor release.
-4. Merge the PR. Argo CD replaces the pod, and GitLab migrates its database on start.
+4. Merge the PR.
 
 ## Checks
 
-`make test-commit` runs every check in the pinned `kube-devenv` image. GitHub runs it as the `commit` check on every pull request and every push to `main`. The mirror on GitLab runs it too.
-
-| Command | What it does |
-|---|---|
-| `make test-fast` | Runs the secret scan. Run `make hooks` once to run it before each commit. |
-| `make charts` | Lints and renders each chart, then validates it against the Kubernetes and CRD schemas. Needs network access. |
-| `make test-scripts` | Tests `first-objects.sh` with stand-ins for kubectl, curl and GitLab, and tests what the charts render. |
-| `make test-integration` | Installs the apps on a real cluster (`KUBECONFIG`), checks what the Job made, and waits for a pipeline to pass on the runner. It uses two scratch namespaces that end in `-it` and deletes them. Not part of `test-commit`. It needs kubectl, helm and jq. |
-
-## Related repos
-
-- `../kube-homelab`: builds the `ci` cluster and tells Argo CD about this repo.
-- `../kube-platform`: the platform that this repo builds on (Traefik, storage, Argo CD).
+`make test-commit` runs every check in the pinned `kube-devenv` image. It is the `commit` check on GitHub and on the GitLab mirror. `make test-integration` installs the apps on a real cluster (`KUBECONFIG`) and is not part of it.
