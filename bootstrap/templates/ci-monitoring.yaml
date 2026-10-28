@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ci-dashboards
+  name: ci-monitoring
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: {{ .Values.repoURL | quote }}
     targetRevision: {{ .Values.revision | quote }}
-    path: apps/ci-dashboards
+    path: apps/ci-monitoring
   destination:
     server: https://kubernetes.default.svc
     namespace: gitlab-runner

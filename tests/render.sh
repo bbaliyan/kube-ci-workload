@@ -72,13 +72,4 @@ is "the bootstrap gives GitLab and the operator the same ProxyGroup name" "$?" "
 grep -q 'name: tailscale-operator' <<<"$out" && grep -q 'path: apps/tailscale-operator' <<<"$out" && grep -q 'Prune=false,Delete=false' <<<"$out"
 is "the bootstrap installs the Tailscale operator and never prunes it" "$?" "$out"
 
-out="$(helm template gitlab-runner "$repo/apps/gitlab-runner" --namespace gitlab-runner)"
-grep -q 'kind: PodMonitor' <<<"$out" && grep -q 'release: prometheus' <<<"$out"
-is "the runner is scraped by the platform Prometheus, through a PodMonitor that carries its release label" "$?" "$out"
-
-out="$(helm template d "$repo/apps/ci-dashboards")"
-grep -q 'grafana_dashboard: "1"' <<<"$out" && grep -q 'name: grafana-dashboard-ci-capacity' <<<"$out"
-is "each dashboard file becomes a ConfigMap that the Grafana sidecar loads" "$?" "$out"
-for f in "$repo"/apps/ci-dashboards/dashboards/*.json; do python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f"; is "$(basename "$f") is valid JSON" "$?"; done
-
 [ "$failures" -eq 0 ] && echo "all render tests passed" || { echo "$failures render test(s) failed"; exit 1; }

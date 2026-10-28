@@ -1,0 +1,42 @@
+{
+  "title": "CI pipelines",
+  "uid": "ci-pipelines",
+  "tags": ["ci"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "bargauge", "title": "Share of the last 7 days that the branch was green",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "green", "value": 0.95 } ] } }, "overrides": [] },
+      "targets": [ { "refId": "A", "legendFormat": "{{project}}", "instant": true, "expr": "ci:pipeline_green:ratio_7d" } ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Push to result (queue plus run)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [ { "refId": "A", "legendFormat": "{{project}}", "expr": "ci:pipeline_push_to_result:seconds" } ]
+    },
+    {
+      "id": 3, "type": "table", "title": "Pipeline duration over 7 days",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "transformations": [ { "id": "joinByField", "options": { "byField": "project", "mode": "outer" } } ],
+      "targets": [
+        { "refId": "A", "legendFormat": "p50", "format": "table", "instant": true, "expr": "ci:pipeline_duration:seconds_p50_7d" },
+        { "refId": "B", "legendFormat": "p95", "format": "table", "instant": true, "expr": "ci:pipeline_duration:seconds_p95_7d" }
+      ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Job queue time (p50 and p95)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "legendFormat": "p50", "expr": "ci:job_queue:seconds_p50_1h" },
+        { "refId": "B", "legendFormat": "p95", "expr": "ci:job_queue:seconds_p95_1h" }
+      ]
+    }
+  ]
+}

@@ -9,6 +9,8 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster insta
 | `apps/first-objects/` | A Job that creates the first GitLab objects and the Secrets below. |
 | `apps/gitlab-runner/` | The GitLab Runner chart. |
 | `apps/mirror-sync/` | One pod that mirrors GitHub repositories into the `mirror` group every 60 seconds. |
+| `apps/pipeline-exporter/` | Exports the status and durations of the mirrored projects' pipelines to Prometheus. |
+| `apps/ci-monitoring/` | The KPI rules and the Grafana dashboards. |
 | `apps/tailscale-operator/` | The Tailscale operator and the ProxyGroup that serves the tailnet names. |
 
 ## Secrets
@@ -17,6 +19,7 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster insta
 |---|---|---|---|
 | `gitlab-root` | `gitlab` | `username`, `password` | `first-objects` |
 | `gitlab-mirror` | `gitlab` | `token` | `first-objects` |
+| `gitlab-exporter` | `gitlab` | `gitlabToken` | `first-objects` |
 | `gitlab-runner` | `gitlab-runner` | `runner-token`, `runner-registration-token` | `first-objects` |
 | `github-source` | `gitlab` | `token` (read-only GitHub token) | the consumer |
 | `operator-oauth` | `tailscale` | `client_id`, `client_secret` | the consumer |
@@ -52,4 +55,4 @@ GitLab has required upgrade stops. Move one minor release at a time. Renovate op
 
 ## Checks
 
-`make test-commit` runs every check in the pinned `kube-devenv` image. It is the `commit` check on GitHub and on the GitLab mirror. `make test-integration` installs the apps on a real cluster (`KUBECONFIG`) and is not part of it.
+`make test-commit` runs every check in the pinned `kube-devenv` image. The KPI rules have tests in `tests/kpis.test.yaml` (promtool), and each chart has declared tests in its `tests/` folder (helm-unittest). It is the `commit` check on GitHub and on the GitLab mirror. `make test-integration` installs the apps on a real cluster (`KUBECONFIG`) and is not part of it.

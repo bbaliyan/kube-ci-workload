@@ -1,0 +1,22 @@
+groups:
+  - name: ci-kpis
+    rules:
+      # The exporter's status gauge is 1 for the latest pipeline's status and 0 for the others.
+      # The mean over a week is the share of time that the branch was green.
+      - record: ci:pipeline_green:ratio_7d
+        expr: max by (project, ref) (avg_over_time(gitlab_ci_pipeline_status{status="success"}[7d]))
+      # The wait for a runner plus the run. The delay before GitLab creates the pipeline is not in it.
+      - record: ci:pipeline_push_to_result:seconds
+        expr: >-
+          sum by (project, ref) (gitlab_ci_pipeline_queued_duration_seconds)
+          + sum by (project, ref) (gitlab_ci_pipeline_duration_seconds)
+      # The gauge keeps the last pipeline's value between pipelines, so a quantile over it weighs
+      # each pipeline by how long it stayed the latest.
+      - record: ci:pipeline_duration:seconds_p50_7d
+        expr: max by (project, ref) (quantile_over_time(0.5, gitlab_ci_pipeline_duration_seconds[7d]))
+      - record: ci:pipeline_duration:seconds_p95_7d
+        expr: max by (project, ref) (quantile_over_time(0.95, gitlab_ci_pipeline_duration_seconds[7d]))
+      - record: ci:job_queue:seconds_p50_1h
+        expr: histogram_quantile(0.5, sum by (le) (rate(gitlab_runner_job_queue_duration_seconds_bucket[1h])))
+      - record: ci:job_queue:seconds_p95_1h
+        expr: histogram_quantile(0.95, sum by (le) (rate(gitlab_runner_job_queue_duration_seconds_bucket[1h])))

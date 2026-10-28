@@ -1,0 +1,34 @@
+gitlab-ci-pipelines-exporter:
+  # The token is in the Secret that first-objects makes (key gitlabToken).
+  gitlabSecret: gitlab-exporter
+  # Redis is only for several replicas or webhooks. One replica keeps its state in memory.
+  redis:
+    enabled: false
+  config:
+    gitlab:
+      url: http://gitlab.gitlab.svc.cluster.local
+    # Every project of the mirror group, on its default branch.
+    wildcards:
+      - owner:
+          name: mirror
+          kind: group
+    project_defaults:
+      pull:
+        refs:
+          branches:
+            regexp: ^(?:main|master)$
+  # The platform Prometheus scrapes only monitors that carry release: prometheus.
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus
+    endpoints:
+      - port: http
+        interval: 30s
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  nodeSelector: {}

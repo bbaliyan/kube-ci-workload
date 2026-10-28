@@ -1,0 +1,19 @@
+suite: runner metrics
+templates:
+  - templates/podmonitor.yaml
+tests:
+  - it: lets the platform Prometheus scrape the runner pod
+    release:
+      name: gitlab-runner
+    asserts:
+      - isKind:
+          of: PodMonitor
+      - equal:
+          path: metadata.labels.release
+          value: prometheus
+      - equal:
+          path: spec.selector.matchLabels.app
+          value: gitlab-runner
+      - equal:
+          path: spec.podMetricsEndpoints[0].port
+          value: metrics

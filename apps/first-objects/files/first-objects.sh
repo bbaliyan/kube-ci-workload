@@ -5,6 +5,7 @@
 #
 #   gitlab-root    (namespace $GITLAB_NAMESPACE)  keys username, password
 #   gitlab-mirror  (namespace $GITLAB_NAMESPACE)  key token: a group token that pushes to the mirror group
+#   gitlab-exporter (namespace $GITLAB_NAMESPACE) key gitlabToken: a read-only group token for the pipeline exporter
 #   gitlab-runner  (namespace $RUNNER_NAMESPACE)  keys runner-token, runner-registration-token
 #
 # A new GitLab has no group, no runner and no known root password, and the GitLab API
@@ -107,6 +108,14 @@ if ! have_secret "$GITLAB_NAMESPACE" gitlab-mirror; then
   put_secret "$GITLAB_NAMESPACE" gitlab-mirror "token=$mirror_token"
   unset mirror_token
   echo "first-objects: saved Secret gitlab-mirror"
+fi
+
+if ! have_secret "$GITLAB_NAMESPACE" gitlab-exporter; then
+  expires="$(date -u -d '+364 days' +%Y-%m-%d)"
+  exporter_token="$(api POST "/groups/$group_id/access_tokens"     --data-urlencode name=pipeline-exporter --data-urlencode "expires_at=$expires" --data-urlencode access_level=20     --data-urlencode "scopes[]=read_api" --data-urlencode "scopes[]=read_repository" | jq -er .token)" || fail "cannot create the exporter token"
+  put_secret "$GITLAB_NAMESPACE" gitlab-exporter "gitlabToken=$exporter_token"
+  unset exporter_token
+  echo "first-objects: saved Secret gitlab-exporter"
 fi
 
 if ! have_secret "$RUNNER_NAMESPACE" gitlab-runner; then

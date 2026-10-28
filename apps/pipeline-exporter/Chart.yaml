@@ -1,0 +1,9 @@
+apiVersion: v2
+name: pipeline-exporter
+description: Exports the GitLab pipeline status and durations of every mirrored project to Prometheus
+type: application
+version: 0.1.0
+dependencies:
+  - name: gitlab-ci-pipelines-exporter
+    version: 0.3.5
+    repository: https://charts.visonneau.fr
