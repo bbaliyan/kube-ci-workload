@@ -6,5 +6,5 @@ version: 0.1.0
 dependencies:
   - name: gitlab-runner
     # The runner must stay on the same minor release as GitLab (19.5 here).
-    version: 0.94.1
+    version: 0.94.2
     repository: https://charts.gitlab.io
