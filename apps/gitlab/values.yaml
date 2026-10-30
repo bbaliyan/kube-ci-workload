@@ -2,7 +2,7 @@
 # Renovate does not merge it. See https://docs.gitlab.com/update/upgrade_paths/
 image:
   repository: gitlab/gitlab-ce
-  tag: 19.5.1-ce.0
+  tag: 19.5.3-ce.0
 
 # The canonical address. GitLab builds its links and clone URLs from it. It must start with http://
 # or https://. With https, TLS ends at the proxy in front of GitLab (the tailnet Ingress), and
