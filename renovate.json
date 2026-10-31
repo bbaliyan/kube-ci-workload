@@ -13,13 +13,14 @@
   ],
   "packageRules": [
     {
-      "description": "GitLab has required upgrade stops, and the runner follows its minor release. A person merges each one.",
+      "description": "GitLab has required upgrade stops, and the runner follows its minor release. A person merges each one, so the PR comes as soon as a release exists: there is no minimumReleaseAge to wait for.",
       "matchPackageNames": [
         "gitlab/gitlab-ce",
         "gitlab-runner",
         "tailscale-operator"
       ],
-      "automerge": false
+      "automerge": false,
+      "minimumReleaseAge": "0 days"
     },
     {
       "description": "Pin the chart version in Chart.yaml, so Renovate can track it.",
