@@ -30,7 +30,7 @@ lint-scripts:
 	shellcheck -S warning $(SCRIPTS)
 
 lint-yaml:
-	yamllint -d '{extends: relaxed, rules: {line-length: disable}}' bootstrap/values.yaml apps/*/values.yaml .gitlab-ci.yml .github/workflows
+	yamllint -d '{extends: relaxed, rules: {line-length: disable}}' bootstrap/values.yaml platform-values/*.yaml apps/*/values.yaml .gitlab-ci.yml .github/workflows
 
 lint-pipelines:
 	$(CHECKS)/pipeline-lint.sh .
