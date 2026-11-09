@@ -1,0 +1,25 @@
+# Read by the platform `observability` Application when the cluster passes this repo as its
+# workloads repo. The keys are the ones the kube-platform observability README documents.
+# The storage class is the one that bootstrap/templates/storage-provisioner.yaml makes.
+prometheus:
+  retention: 365d
+  # Prometheus counts GB as 1024^3 bytes, so 127GB is 85% of the 150Gi volume.
+  # Prometheus drops its oldest data at this size, before the volume fills.
+  retentionSize: "127GB"
+  dropUnusedControlPlaneMetrics: true
+  storage:
+    size: 150Gi
+    storageClassName: nas
+alertmanager:
+  storage:
+    size: 2Gi
+    storageClassName: nas
+grafana:
+  storage:
+    size: 5Gi
+    storageClassName: nas
+loki:
+  retention: 7d
+  storage:
+    size: 20Gi
+    storageClassName: nas

@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage-provisioner-nas
+  namespace: argocd
+  annotations:
+    # GitLab claims its volumes from this class, so it syncs before GitLab.
+    argocd.argoproj.io/sync-wave: "-1"
+    kube-stack/keep-resources-on-delete: owns the storage class that volumes depend on
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.storageProvisioner.platformRepoURL | quote }}
+    targetRevision: {{ .Values.storageProvisioner.platformRevision | quote }}
+    path: platform/storage-provisioner/democratic-csi
+    helm:
+      valuesObject:
+        democratic-csi:
+          driver:
+            existingConfigSecret: {{ .Values.storageProvisioner.driverConfigSecret | quote }}
+            config:
+              driver: freenas-api-iscsi
+          csiDriver:
+            name: {{ .Values.storageProvisioner.csiDriverName | quote }}
+          # The node plugin must run on the GitLab node to mount the volumes of GitLab.
+          # It must not run on the privileged node: the plugin is privileged and mounts the NAS API key.
+          node:
+            tolerations:
+              {{- toYaml .Values.gitlab.tolerations | nindent 14 }}
+          storageClasses:
+            - name: {{ .Values.storageProvisioner.className | quote }}
+              defaultClass: true
+              reclaimPolicy: Delete
+              volumeBindingMode: Immediate
+              allowVolumeExpansion: true
+              parameters:
+                fsType: ext4
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

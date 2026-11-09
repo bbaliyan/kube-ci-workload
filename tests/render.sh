@@ -72,4 +72,13 @@ is "the bootstrap gives GitLab and the operator the same ProxyGroup name" "$?" "
 grep -q 'name: tailscale-operator' <<<"$out" && grep -q 'path: apps/tailscale-operator' <<<"$out" && grep -q 'Prune=false,Delete=false' <<<"$out"
 is "the bootstrap installs the Tailscale operator and never prunes it" "$?" "$out"
 
+out="$(helm template b "$repo/bootstrap" --show-only templates/storage-provisioner.yaml)"
+grep -q 'path: platform/storage-provisioner/democratic-csi' <<<"$out" && grep -q 'name: "nas"' <<<"$out" && grep -q 'defaultClass: true' <<<"$out"   && grep -q 'reclaimPolicy: Delete' <<<"$out" && grep -q 'existingConfigSecret: "truenas-iscsi-ci-driver-config"' <<<"$out" && grep -q 'Prune=false,Delete=false' <<<"$out"
+is "the bootstrap makes the default NAS class from the platform chart and never prunes it" "$?" "$out"
+tolerations="$(grep -A12 '          node:' <<<"$out")"
+grep -q 'key: dedicated' <<<"$tolerations" && grep -q 'value: gitlab' <<<"$tolerations" && grep -q 'effect: NoSchedule' <<<"$tolerations" && ! grep -q 'operator: Exists' <<<"$tolerations"
+is "the node plugin tolerates the GitLab taint only, so it stays off the privileged node" "$?" "$tolerations"
+[ "$(grep -c 'storageClassName: nas$' "$repo/platform-values/observability.yaml")" -eq 4 ]
+is "all four observability volumes use the class that the bootstrap makes" "$?"
+
 [ "$failures" -eq 0 ] && echo "all render tests passed" || { echo "$failures render test(s) failed"; exit 1; }

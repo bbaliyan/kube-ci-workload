@@ -23,6 +23,16 @@ gitlab:
       effect: NoSchedule
   helmValues: {}
 
+# The NAS iSCSI storage class. The consumer makes the Secret in kube-system: key
+# driver-config-file.yaml, the democratic-csi driver config. The class is the cluster default.
+# platform-values/observability.yaml names the same class.
+storageProvisioner:
+  platformRepoURL: https://github.com/bbaliyan/kube-platform.git
+  platformRevision: stable
+  className: nas
+  csiDriverName: org.democratic-csi.freenas-api-iscsi-ci
+  driverConfigSecret: truenas-iscsi-ci-driver-config
+
 # Small workloads run next to the platform, on the general worker.
 firstObjects:
   nodeSelector:

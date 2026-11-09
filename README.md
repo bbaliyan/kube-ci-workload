@@ -12,6 +12,7 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster insta
 | `apps/pipeline-exporter/` | Exports the status and durations of the mirrored projects' pipelines to Prometheus. |
 | `apps/ci-monitoring/` | The KPI rules and the Grafana dashboards. |
 | `apps/tailscale-operator/` | The Tailscale operator and the ProxyGroup that serves the tailnet names. |
+| `platform-values/` | Settings for the platform components of the cluster. See below. |
 
 ## Secrets
 
@@ -21,6 +22,7 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster insta
 | `gitlab-mirror` | `gitlab` | `token` | `first-objects` |
 | `gitlab-exporter` | `gitlab` | `gitlabToken` | `first-objects` |
 | `gitlab-runner` | `gitlab-runner` | `runner-token`, `runner-registration-token` | `first-objects` |
+| `truenas-iscsi-ci-driver-config` | `kube-system` | `driver-config-file.yaml` (democratic-csi driver config) | the consumer |
 | `github-source` | `gitlab` | `token` (read-only GitHub token) | the consumer |
 | `operator-oauth` | `tailscale` | `client_id`, `client_secret` | the consumer |
 
@@ -43,6 +45,14 @@ To sign in as `root`:
 
 1. Run `kubectl -n gitlab get secret gitlab-root -o jsonpath='{.data.password}' | base64 -d`.
 2. Open the address in `gitlab.externalUrl` and sign in as `root`.
+
+## Storage
+
+The bootstrap makes the storage class `nas`, the default class, with democratic-csi on a NAS over iSCSI. The class deletes a volume when its claim goes. The node plugin tolerates the GitLab taint only, so it runs on the GitLab node and not on the privileged node. Change the names in `storageProvisioner` in `bootstrap/values.yaml`.
+
+## The platform-values/ directory
+
+`platform-values/observability.yaml` sets the size, class and retention of Prometheus, Alertmanager, Grafana and Loki. The platform `observability` Application reads it when the cluster passes this repo as its workloads repo. A merge to `main` reaches the cluster at the next sync.
 
 ## Upgrade GitLab
 
