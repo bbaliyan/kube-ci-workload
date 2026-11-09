@@ -48,7 +48,7 @@ To sign in as `root`:
 
 ## Storage
 
-The bootstrap makes the storage class `nas`, the default class, with democratic-csi on a NAS over iSCSI. The class deletes a volume when its claim goes. The node plugin tolerates the GitLab taint only, so it runs on the GitLab node and not on the privileged node. Change the names in `storageProvisioner` in `bootstrap/values.yaml`.
+The bootstrap makes the storage class `nas`, the default class, with democratic-csi on a NAS over iSCSI. The class deletes a volume when its claim goes. The node plugin has no toleration, so it does not run on the privileged node, which is tainted and would give it the NAS API key. Change the names in `storageProvisioner` in `bootstrap/values.yaml`.
 
 ## The platform-values/ directory
 

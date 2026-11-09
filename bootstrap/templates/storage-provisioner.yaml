@@ -23,11 +23,8 @@ spec:
               driver: freenas-api-iscsi
           csiDriver:
             name: {{ .Values.storageProvisioner.csiDriverName | quote }}
-          # The node plugin must run on the GitLab node to mount the volumes of GitLab.
-          # It must not run on the privileged node: the plugin is privileged and mounts the NAS API key.
-          node:
-            tolerations:
-              {{- toYaml .Values.gitlab.tolerations | nindent 14 }}
+          # No toleration for the node plugin: it must stay off the privileged node, because
+          # it is privileged itself and mounts the NAS API key.
           storageClasses:
             - name: {{ .Values.storageProvisioner.className | quote }}
               defaultClass: true
