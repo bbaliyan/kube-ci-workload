@@ -23,7 +23,9 @@ lanHost: ""
 # The Traefik entry point for lanHost. The platform names its plain HTTP one `web`.
 entryPoint: web
 
-storageClass: local-path
+# The StorageClass of both volume claims. Empty uses the cluster default class.
+# A claim template cannot change after the first install, so set this before the first sync.
+storageClass: ""
 configSize: 1Gi
 dataSize: 40Gi
 
