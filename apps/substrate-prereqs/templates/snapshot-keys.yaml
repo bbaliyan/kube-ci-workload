@@ -1,0 +1,24 @@
+# The Secret that the install chart reads (storage.s3Compatible.credentials.secretName).
+# The namespace comes from the Application (CreateNamespace), because the install chart
+# renders it only when it makes its own ExternalSecret.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.snapshotKeysSecret }}
+  namespace: {{ .Values.controlPlaneNamespace }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: ci-secrets
+    kind: ClusterSecretStore
+  target:
+    name: {{ .Values.snapshotKeysSecret }}
+  data:
+    - secretKey: {{ .Values.accessKeyKey }}
+      remoteRef:
+        key: {{ .Values.sourceSecret }}
+        property: {{ .Values.accessKeyProperty }}
+    - secretKey: {{ .Values.secretKeyKey }}
+      remoteRef:
+        key: {{ .Values.sourceSecret }}
+        property: {{ .Values.secretKeyProperty }}

@@ -62,3 +62,26 @@ tailscale:
   # The ProxyGroup that serves every tailnet Ingress. GitLab and the later apps use this name.
   proxyGroup: ci-proxy
   helmValues: {}
+
+# Agent Substrate: the control plane that runs sandboxed, suspendable agents. It stores snapshots
+# in the in-cluster S3 store (RustFS from the platform). Off by default.
+# The consumer makes the Secret object-store (keys access-key and secret-key) in the namespace
+# ci-secrets at first boot, and gives the platform the same Secret as the RustFS root keys.
+substrate:
+  enabled: false
+  # The charts and the install image come from kube-agent-substrate. Pin a commit.
+  repoURL: https://github.com/bbaliyan/kube-agent-substrate
+  revision: 0d7451ca840f10e5ac5432b7abcc00cb3d88ef86
+  # The digest of the install image published for that commit (substrate-install:main-0d7451c).
+  installImageDigest: sha256:a94e4d36f29aa2ef40405792a736b52227722272863a8e769b5e36802451de96
+  namespace: ate-system
+  bucket: substrate-snapshots
+  s3Endpoint: http://rustfs.rustfs.svc:9000
+  # Any fixed level works. Keep it the same on every node. See docs/adr in the hub.
+  selinuxLevel: "s0:c100,c200"
+  nodeSelector:
+    kube-compute.io/node-group: general
+  prereqs:
+    helmValues: {}
+  install:
+    helmValues: {}

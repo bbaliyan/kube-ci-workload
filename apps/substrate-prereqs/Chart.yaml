@@ -1,0 +1,5 @@
+apiVersion: v2
+name: substrate-prereqs
+description: What the Agent Substrate install needs first - the secret store, the snapshot keys, the bucket and a CRD stub
+type: application
+version: 0.1.0
