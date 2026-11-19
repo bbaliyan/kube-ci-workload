@@ -1,11 +1,11 @@
-{{- if .Values.substrate.enabled }}
+{{- if or .Values.substrate.enabled .Values.rustfs.enabled }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: substrate-prereqs
   namespace: argocd
   annotations:
-    # After the platform (External Secrets, RustFS) and before the install.
+    # After the platform (External Secrets). Before RustFS, which reads the keys made here.
     argocd.argoproj.io/sync-wave: "4"
 spec:
   project: default

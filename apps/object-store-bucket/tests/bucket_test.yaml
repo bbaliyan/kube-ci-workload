@@ -1,0 +1,15 @@
+suite: object store bucket
+templates:
+  - templates/bucket-job.yaml
+tests:
+  - it: creates the bucket with the RustFS root keys, in the RustFS namespace
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: rustfs
+      - equal:
+          path: spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.key
+          value: RUSTFS_ACCESS_KEY
+      - equal:
+          path: spec.template.spec.containers[0].env[4].value
+          value: substrate-snapshots

@@ -2,7 +2,7 @@ suite: substrate prerequisites
 templates:
   - templates/secret-store.yaml
   - templates/snapshot-keys.yaml
-  - templates/bucket-job.yaml
+  - templates/object-store-keys.yaml
 tests:
   - it: reads the keys from a namespace of this cluster, through a ClusterSecretStore
     template: templates/secret-store.yaml
@@ -28,15 +28,18 @@ tests:
       - equal:
           path: spec.data[1].remoteRef.property
           value: secret-key
-  - it: creates the bucket with the RustFS root keys, in the RustFS namespace
-    template: templates/bucket-job.yaml
+  - it: generates the store keys once, in the store namespace
+    template: templates/object-store-keys.yaml
+    documentSelector:
+      path: kind
+      value: ExternalSecret
     asserts:
       - equal:
+          path: spec.refreshInterval
+          value: "0"
+      - equal:
           path: metadata.namespace
-          value: rustfs
+          value: ci-secrets
       - equal:
-          path: spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.key
-          value: RUSTFS_ACCESS_KEY
-      - equal:
-          path: spec.template.spec.containers[0].env[4].value
-          value: substrate-snapshots
+          path: spec.dataFrom[0].rewrite[0].regexp.target
+          value: access-key
