@@ -100,3 +100,10 @@ substrate:
     helmValues: {}
   install:
     helmValues: {}
+  # The gVisor worker pool. Each worker pod needs its cpu and memory free on the general node,
+  # beside the control plane. The chart sets the limits equal to the requests.
+  workers:
+    replicas: 2
+    cpu: "1"
+    memory: 2Gi
+    helmValues: {}
