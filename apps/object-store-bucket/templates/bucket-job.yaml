@@ -1,4 +1,4 @@
-# RustFS 1.0.x cannot create a bucket on its own, so this Job calls the S3 API.
+# RustFS 1.0.x cannot create a bucket on its own, so this Job calls the S3 API with curl, which signs the request itself.
 # It runs on every sync and does nothing if the bucket exists.
 apiVersion: batch/v1
 kind: Job
@@ -19,24 +19,25 @@ spec:
       {{- end }}
       containers:
         - name: create-bucket
-          image: {{ .Values.awsCliImage }}
+          image: {{ .Values.curlImage }}
           env:
-            - name: AWS_ACCESS_KEY_ID
+            - name: ACCESS_KEY
               valueFrom:
                 secretKeyRef: {name: {{ .Values.rustfs.credentialsSecret }}, key: RUSTFS_ACCESS_KEY}
-            - name: AWS_SECRET_ACCESS_KEY
+            - name: SECRET_KEY
               valueFrom:
                 secretKeyRef: {name: {{ .Values.rustfs.credentialsSecret }}, key: RUSTFS_SECRET_KEY}
-            - {name: AWS_REGION, value: {{ .Values.region | quote }}}
-            - {name: AWS_ENDPOINT_URL, value: {{ .Values.rustfs.endpoint | quote }}}
+            - {name: REGION, value: {{ .Values.region | quote }}}
+            - {name: ENDPOINT, value: {{ .Values.rustfs.endpoint | quote }}}
             - {name: BUCKET, value: {{ .Values.bucket | quote }}}
           command:
             - /bin/sh
             - -c
             - |
+              s3() { curl -sSf --user "$ACCESS_KEY:$SECRET_KEY" --aws-sigv4 "aws:amz:$REGION:s3" "$@"; }
               for i in $(seq 1 60); do
-                aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null && exit 0
-                aws s3api create-bucket --bucket "$BUCKET" 2>/dev/null && exit 0
+                s3 -I "$ENDPOINT/$BUCKET" >/dev/null 2>&1 && exit 0
+                s3 -X PUT "$ENDPOINT/$BUCKET" >/dev/null 2>&1 && exit 0
                 echo "waiting for the object store ($i/60)"
                 sleep 5
               done

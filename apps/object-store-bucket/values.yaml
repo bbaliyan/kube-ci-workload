@@ -5,6 +5,6 @@ rustfs:
   credentialsSecret: rustfs-credentials
 bucket: substrate-snapshots
 region: us-east-1
-# renovate: datasource=docker depName=amazon/aws-cli
-awsCliImage: amazon/aws-cli:2.38.5@sha256:c8156a0e74e13929a42d7e60f0d4e14e7d28d980cd21822505d4bff80e5460c1
+# renovate: datasource=docker depName=curlimages/curl
+curlImage: curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
 nodeSelector: {}
