@@ -88,11 +88,11 @@ is "RustFS comes from the platform chart on the NAS class, reads its keys from t
 out="$(helm template b "$repo/bootstrap" --set rustfs.storageSize=50Gi --show-only templates/rustfs.yaml)"
 grep -q 'storageSize: 50Gi' <<<"$out"
 is "the RustFS size is a value of this repo" "$?" "$out"
-for app in substrate-prereqs rustfs object-store-bucket substrate-install; do
+for app in substrate-prereqs rustfs object-store-bucket substrate-install substrate-workers; do
   helm template b "$repo/bootstrap" --show-only "templates/$app.yaml" | grep -o 'sync-wave: "[0-9]*"'
 done | tr -d '
-' | grep -q 'sync-wave: "4"sync-wave: "5"sync-wave: "6"sync-wave: "7"'
-is "the keys come first, then RustFS, then its bucket, then the Substrate install" "$?"
+' | grep -q 'sync-wave: "4"sync-wave: "5"sync-wave: "6"sync-wave: "7"sync-wave: "8"'
+is "the keys come first, then RustFS, then its bucket, then the Substrate install, then its workers" "$?"
 out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-install.yaml)"
 grep -q 'path: charts/substrate-install' <<<"$out" && grep -q 'profile: s3-compatible' <<<"$out" && grep -q 'type: container_engine_t' <<<"$out"   && grep -q 'secretName: snapshot-store-keys' <<<"$out" && grep -q 'repoURL: "https://github.com/bbaliyan/kube-agent-substrate"' <<<"$out"
 is "the Substrate install uses the in-cluster S3 store, a confined SELinux type and the pinned public repo" "$?" "$out"
@@ -104,5 +104,14 @@ is "a consumer value overrides a Substrate install default" "$?" "$out"
 out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-prereqs.yaml)"
 grep -q 'path: apps/substrate-prereqs' <<<"$out" && grep -q 'CreateNamespace=true' <<<"$out"
 is "the Substrate prerequisites sync into the control plane namespace" "$?" "$out"
+
+out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-workers.yaml)"
+grep -q 'path: charts/substrate-workers' <<<"$out" && grep -q 'type: container_engine_t' <<<"$out" && grep -q 'kube-compute.io/node-group: general' <<<"$out"   && grep -q 'replicas: 2' <<<"$out" && grep -q 'cpu: "1"' <<<"$out" && grep -q 'memory: 2Gi' <<<"$out" && grep -q 'namespace: ate-system' <<<"$out"
+is "the Substrate workers run two gVisor workers on the general node in the control plane namespace" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --set substrate.workers.replicas=4 --set substrate.workers.helmValues.sandboxClass=gvisor --show-only templates/substrate-workers.yaml)"
+grep -q 'replicas: 4' <<<"$out"
+is "the worker count is a value of this repo" "$?" "$out"
+! helm template b "$repo/bootstrap" --set substrate.enabled=false --set rustfs.enabled=true | grep -q 'substrate-workers'
+is "RustFS alone installs no Substrate workers" "$?"
 
 [ "$failures" -eq 0 ] && echo "all render tests passed" || { echo "$failures render test(s) failed"; exit 1; }

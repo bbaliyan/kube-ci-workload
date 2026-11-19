@@ -1,0 +1,37 @@
+{{- if .Values.substrate.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-workers
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.substrate.repoURL | quote }}
+    targetRevision: {{ .Values.substrate.revision | quote }}
+    path: charts/substrate-workers
+    helm:
+      valuesObject:
+        {{- $workers := dict
+          "pool" (dict "name" "gvisor" "nodeSelector" .Values.substrate.nodeSelector)
+          "workers" (dict
+            "replicas" .Values.substrate.workers.replicas
+            "cpu" (.Values.substrate.workers.cpu | toString)
+            "memory" .Values.substrate.workers.memory)
+          "selinux" (dict "enabled" true "type" "container_engine_t") -}}
+        {{- mergeOverwrite $workers .Values.substrate.workers.helmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.substrate.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 2m
+        maxDuration: 10m
+{{- end }}
