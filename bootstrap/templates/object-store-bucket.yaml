@@ -1,0 +1,26 @@
+{{- if .Values.rustfs.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: object-store-bucket
+  namespace: argocd
+  annotations:
+    # After RustFS is healthy: the Job needs the S3 API.
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL | quote }}
+    targetRevision: {{ .Values.revision | quote }}
+    path: apps/object-store-bucket
+    helm:
+      valuesObject:
+        {{- mergeOverwrite (dict "bucket" .Values.substrate.bucket "nodeSelector" .Values.rustfs.nodeSelector) .Values.rustfs.bucketHelmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rustfs
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+{{- end }}

@@ -63,12 +63,25 @@ tailscale:
   proxyGroup: ci-proxy
   helmValues: {}
 
+# The S3 store for the Substrate snapshots: RustFS from kube-platform, one replica on one block
+# volume of the NAS class. It cannot grow in place. It is on for this cluster. Set enabled to
+# false on another cluster. The root keys are generated in the cluster (see substrate-prereqs).
+rustfs:
+  enabled: true
+  repoURL: https://github.com/bbaliyan/kube-platform.git
+  # The contract branch of kube-platform. Only its promote workflow moves it.
+  revision: stable
+  storageClassName: nas
+  storageSize: 30Gi
+  nodeSelector:
+    kube-compute.io/node-group: general
+  helmValues: {}
+  bucketHelmValues: {}
+
 # Agent Substrate: the control plane that runs sandboxed, suspendable agents. It stores snapshots
-# in the in-cluster S3 store (RustFS from the platform). Off by default.
-# The consumer makes the Secret object-store (keys access-key and secret-key) in the namespace
-# ci-secrets at first boot, and gives the platform the same Secret as the RustFS root keys.
+# in the S3 store above, so it needs rustfs.enabled.
 substrate:
-  enabled: false
+  enabled: true
   # The charts and the install image come from kube-agent-substrate. Pin a commit.
   repoURL: https://github.com/bbaliyan/kube-agent-substrate
   revision: 0d7451ca840f10e5ac5432b7abcc00cb3d88ef86
@@ -77,7 +90,9 @@ substrate:
   namespace: ate-system
   bucket: substrate-snapshots
   s3Endpoint: http://rustfs.rustfs.svc:9000
-  # Any fixed level works. Keep it the same on every node. See docs/adr in the hub.
+  # The Secret in ci-secrets that holds the generated root keys of the store.
+  keysSecret: object-store
+  # Any fixed level works. Keep it the same on every node.
   selinuxLevel: "s0:c100,c200"
   nodeSelector:
     kube-compute.io/node-group: general

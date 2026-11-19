@@ -80,8 +80,19 @@ is "the node plugin has no toleration, so it stays off the privileged node" "$?"
 [ "$(grep -c 'storageClassName: nas$' "$repo/platform-values/observability.yaml")" -eq 4 ]
 is "all four observability volumes use the class that the bootstrap makes" "$?"
 
-! helm template b "$repo/bootstrap" | grep -q 'substrate'
-is "the bootstrap installs no Substrate app until it is enabled" "$?"
+! helm template b "$repo/bootstrap" --set substrate.enabled=false --set rustfs.enabled=false | grep -q 'substrate\|rustfs'
+is "the bootstrap installs no Substrate or RustFS app when both are off" "$?"
+out="$(helm template b "$repo/bootstrap" --show-only templates/rustfs.yaml)"
+grep -q 'path: platform/rustfs' <<<"$out" && grep -q 'storageClassName: nas' <<<"$out" && grep -q 'name: ci-secrets' <<<"$out" && grep -q 'Prune=false,Delete=false' <<<"$out"
+is "RustFS comes from the platform chart on the NAS class, reads its keys from the store and is never pruned" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" --set rustfs.storageSize=50Gi --show-only templates/rustfs.yaml)"
+grep -q 'storageSize: 50Gi' <<<"$out"
+is "the RustFS size is a value of this repo" "$?" "$out"
+for app in substrate-prereqs rustfs object-store-bucket substrate-install; do
+  helm template b "$repo/bootstrap" --show-only "templates/$app.yaml" | grep -o 'sync-wave: "[0-9]*"'
+done | tr -d '
+' | grep -q 'sync-wave: "4"sync-wave: "5"sync-wave: "6"sync-wave: "7"'
+is "the keys come first, then RustFS, then its bucket, then the Substrate install" "$?"
 out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-install.yaml)"
 grep -q 'path: charts/substrate-install' <<<"$out" && grep -q 'profile: s3-compatible' <<<"$out" && grep -q 'type: container_engine_t' <<<"$out"   && grep -q 'secretName: snapshot-store-keys' <<<"$out" && grep -q 'repoURL: "https://github.com/bbaliyan/kube-agent-substrate"' <<<"$out"
 is "the Substrate install uses the in-cluster S3 store, a confined SELinux type and the pinned public repo" "$?" "$out"

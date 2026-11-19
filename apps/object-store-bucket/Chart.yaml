@@ -1,0 +1,5 @@
+apiVersion: v2
+name: object-store-bucket
+description: A Job that creates one bucket in the in-cluster S3 store (RustFS 1.0.x cannot create it on its own)
+type: application
+version: 0.1.0

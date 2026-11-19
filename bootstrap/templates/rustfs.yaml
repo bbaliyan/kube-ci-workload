@@ -1,0 +1,43 @@
+{{- if .Values.rustfs.enabled }}
+# The S3 store for the Substrate snapshots. The chart is the one in kube-platform. The values
+# are here, so a change reaches the cluster at the next sync with no rebuild.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rustfs
+  namespace: argocd
+  annotations:
+    # After the secret store and the keys (substrate-prereqs).
+    argocd.argoproj.io/sync-wave: "5"
+    # The data volume lives in this namespace. Deleting the Application keeps it.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.rustfs.repoURL | quote }}
+    targetRevision: {{ .Values.rustfs.revision | quote }}
+    path: platform/rustfs
+    helm:
+      valuesObject:
+        {{- $rustfs := dict
+          "storageClassName" .Values.rustfs.storageClassName
+          "storageSize" .Values.rustfs.storageSize
+          "secretStore" (dict "name" "ci-secrets" "kind" "ClusterSecretStore")
+          "credentials" (dict "remoteKey" .Values.substrate.keysSecret)
+          "nodeSelector" .Values.rustfs.nodeSelector -}}
+        {{- mergeOverwrite $rustfs .Values.rustfs.helmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rustfs
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 1m
+        maxDuration: 10m
+{{- end }}

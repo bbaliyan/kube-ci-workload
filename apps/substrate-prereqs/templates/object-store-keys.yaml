@@ -1,0 +1,57 @@
+# Random root keys for the S3 store, made once. refreshInterval 0 never rotates them: a new key
+# would not match the data that the store already holds. Delete the Secret to make new keys.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: object-store-access-key
+  namespace: {{ .Values.secretNamespace }}
+spec:
+  length: 20
+  noUpper: true
+  allowRepeat: true
+  symbolCharacters: ""
+  symbols: 0
+  digits: 6
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: object-store-secret-key
+  namespace: {{ .Values.secretNamespace }}
+spec:
+  length: 40
+  noUpper: false
+  allowRepeat: true
+  symbolCharacters: ""
+  symbols: 0
+  digits: 10
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.sourceSecret }}
+  namespace: {{ .Values.secretNamespace }}
+spec:
+  refreshInterval: "0"
+  target:
+    name: {{ .Values.sourceSecret }}
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: object-store-access-key
+      rewrite:
+        - regexp:
+            source: password
+            target: {{ .Values.accessKeyProperty }}
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: object-store-secret-key
+      rewrite:
+        - regexp:
+            source: password
+            target: {{ .Values.secretKeyProperty }}
