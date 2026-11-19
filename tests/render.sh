@@ -80,4 +80,18 @@ is "the node plugin has no toleration, so it stays off the privileged node" "$?"
 [ "$(grep -c 'storageClassName: nas$' "$repo/platform-values/observability.yaml")" -eq 4 ]
 is "all four observability volumes use the class that the bootstrap makes" "$?"
 
+! helm template b "$repo/bootstrap" | grep -q 'substrate'
+is "the bootstrap installs no Substrate app until it is enabled" "$?"
+out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-install.yaml)"
+grep -q 'path: charts/substrate-install' <<<"$out" && grep -q 'profile: s3-compatible' <<<"$out" && grep -q 'type: container_engine_t' <<<"$out"   && grep -q 'secretName: snapshot-store-keys' <<<"$out" && grep -q 'repoURL: "https://github.com/bbaliyan/kube-agent-substrate"' <<<"$out"
+is "the Substrate install uses the in-cluster S3 store, a confined SELinux type and the pinned public repo" "$?" "$out"
+grep -Eq 'targetRevision: "?[0-9a-f]{40}"?$' <<<"$out" && grep -Eq 'digest: sha256:[0-9a-f]{64}' <<<"$out"
+is "the Substrate install pins a commit and an image digest" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --set substrate.install.helmValues.postgres.storage=20Gi --show-only templates/substrate-install.yaml)"
+grep -q 'storage: 20Gi' <<<"$out"
+is "a consumer value overrides a Substrate install default" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-prereqs.yaml)"
+grep -q 'path: apps/substrate-prereqs' <<<"$out" && grep -q 'CreateNamespace=true' <<<"$out"
+is "the Substrate prerequisites sync into the control plane namespace" "$?" "$out"
+
 [ "$failures" -eq 0 ] && echo "all render tests passed" || { echo "$failures render test(s) failed"; exit 1; }

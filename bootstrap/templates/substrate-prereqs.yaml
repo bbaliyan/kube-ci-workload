@@ -1,0 +1,34 @@
+{{- if .Values.substrate.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-prereqs
+  namespace: argocd
+  annotations:
+    # After the platform (External Secrets, RustFS) and before the install.
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL | quote }}
+    targetRevision: {{ .Values.revision | quote }}
+    path: apps/substrate-prereqs
+    helm:
+      valuesObject:
+        {{- mergeOverwrite (dict "nodeSelector" .Values.substrate.nodeSelector) .Values.substrate.prereqs.helmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.substrate.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    # The ClusterSecretStore CRD and the RustFS Secret come from the platform, which may still be starting.
+    retry:
+      limit: 10
+      backoff:
+        duration: 1m
+        maxDuration: 10m
+{{- end }}

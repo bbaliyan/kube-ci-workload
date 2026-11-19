@@ -1,0 +1,49 @@
+{{- if .Values.substrate.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-install
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.substrate.repoURL | quote }}
+    targetRevision: {{ .Values.substrate.revision | quote }}
+    path: charts/substrate-install
+    helm:
+      valuesObject:
+        {{- $install := dict
+          "image" (dict "digest" .Values.substrate.installImageDigest)
+          "storage" (dict
+            "profile" "s3-compatible"
+            "bucket" .Values.substrate.bucket
+            "region" "us-east-1"
+            "s3Compatible" (dict
+              "endpoint" .Values.substrate.s3Endpoint
+              "pathStyle" true
+              "credentials" (dict "secretName" "snapshot-store-keys")))
+          "selinux" (dict "enabled" true "type" "container_engine_t" "level" .Values.substrate.selinuxLevel)
+          "config" (dict
+            "clusterSize" "size0"
+            "preview" "PerTemplateSnapshotLocation"
+            "ateapi" (dict "authz" (dict "bootstrapOwners" "system:serviceaccount:ate-system:ate-client,system:serviceaccount:substrate-system:substrate-registration"))
+            "atenet" (dict "egress" (dict "credentialProvider" "{\"enabled\":false}")))
+          "postgres" (dict
+            "resources" (dict "requests" (dict "cpu" "250m" "memory" "512Mi") "limits" (dict "cpu" "2" "memory" "2Gi"))
+            "storage" "10Gi") -}}
+        {{- mergeOverwrite $install .Values.substrate.install.helmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.substrate.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 2m
+        maxDuration: 10m
+{{- end }}

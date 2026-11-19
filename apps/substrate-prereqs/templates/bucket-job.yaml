@@ -1,0 +1,43 @@
+# RustFS 1.0.x cannot create a bucket on its own, so this Job calls the S3 API.
+# It runs on every sync and does nothing if the bucket exists.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: substrate-bucket
+  namespace: {{ .Values.rustfs.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: create-bucket
+          image: {{ .Values.awsCliImage }}
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.rustfs.credentialsSecret }}, key: RUSTFS_ACCESS_KEY}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.rustfs.credentialsSecret }}, key: RUSTFS_SECRET_KEY}
+            - {name: AWS_REGION, value: {{ .Values.region | quote }}}
+            - {name: AWS_ENDPOINT_URL, value: {{ .Values.rustfs.endpoint | quote }}}
+            - {name: BUCKET, value: {{ .Values.bucket | quote }}}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              for i in $(seq 1 60); do
+                aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null && exit 0
+                aws s3api create-bucket --bucket "$BUCKET" 2>/dev/null && exit 0
+                echo "waiting for the object store ($i/60)"
+                sleep 5
+              done
+              exit 1
