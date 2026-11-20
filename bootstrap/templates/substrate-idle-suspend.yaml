@@ -1,0 +1,37 @@
+{{- if and .Values.prAgent.enabled .Values.prAgent.idleSuspend.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-idle-suspend
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "11"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.substrate.repoURL | quote }}
+    targetRevision: {{ .Values.substrate.revision | quote }}
+    path: charts/substrate-idle-suspend
+    helm:
+      valuesObject:
+        {{- $idle := dict
+          "actors" (list (dict "atespace" .Values.prAgent.atespace "name" "pr-agent"))
+          "idleMinutes" .Values.prAgent.idleSuspend.idleMinutes
+          "prometheus" (dict "url" .Values.prAgent.idleSuspend.prometheusUrl)
+          "substrate" (dict "version" .Values.prAgent.registration.version "namespace" .Values.substrate.namespace)
+          "image" (dict "digest" .Values.prAgent.registration.digest)
+          "nodeSelector" .Values.substrate.nodeSelector -}}
+        {{- mergeOverwrite $idle .Values.prAgent.idleSuspend.helmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.prAgent.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 2m
+        maxDuration: 10m
+{{- end }}

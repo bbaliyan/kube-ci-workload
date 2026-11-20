@@ -1,0 +1,40 @@
+{{- if .Values.prAgentNamespace }}
+# The namespace of the pr-agent actor. This chart is its only owner: the Applications of the actor
+# do not create it. The Job writes the pr-agent Secret here. The namespace holds other objects of the
+# actor, so no sync removes it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.prAgentNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    argocd.argoproj.io/sync-wave: "-2"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  name: first-objects
+  namespace: {{ .Values.prAgentNamespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  name: first-objects
+  namespace: {{ .Values.prAgentNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: first-objects
+subjects:
+  - kind: ServiceAccount
+    name: first-objects
+    namespace: {{ .Release.Namespace }}
+{{- end }}

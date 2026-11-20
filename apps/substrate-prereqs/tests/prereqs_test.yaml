@@ -3,6 +3,7 @@ templates:
   - templates/secret-store.yaml
   - templates/snapshot-keys.yaml
   - templates/object-store-keys.yaml
+  - templates/credential-policy.yaml
 tests:
   - it: reads the keys from a namespace of this cluster, through a ClusterSecretStore
     template: templates/secret-store.yaml
@@ -43,3 +44,25 @@ tests:
       - equal:
           path: spec.dataFrom[0].rewrite[0].regexp.target
           value: access-key
+  - it: makes the credential namespace policy only when asked, so the install finds it and keeps it
+    template: templates/credential-policy.yaml
+    set:
+      credentialPolicy:
+        enabled: true
+        atespace: reviews
+        namespace: pr-agent
+    asserts:
+      - equal:
+          path: metadata.name
+          value: k8s-credential-provider-namespace-policy
+      - equal:
+          path: metadata.namespace
+          value: ate-system
+      - matchRegex:
+          path: data["namespace-policy.yaml"]
+          pattern: "atespace: reviews\n  allowedNamespaces:\n  - pr-agent"
+  - it: makes no credential policy by default
+    template: templates/credential-policy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

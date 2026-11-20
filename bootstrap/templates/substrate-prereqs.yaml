@@ -15,7 +15,9 @@ spec:
     path: apps/substrate-prereqs
     helm:
       valuesObject:
-        {{- mergeOverwrite (dict "nodeSelector" .Values.substrate.nodeSelector) .Values.substrate.prereqs.helmValues | toYaml | nindent 8 }}
+        {{- $prereqs := dict "nodeSelector" .Values.substrate.nodeSelector -}}
+        {{- if .Values.prAgent.enabled }}{{- $_ := set $prereqs "credentialPolicy" (dict "enabled" true "atespace" .Values.prAgent.atespace "namespace" .Values.prAgent.namespace) -}}{{- end }}
+        {{- mergeOverwrite $prereqs .Values.substrate.prereqs.helmValues | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: {{ .Values.substrate.namespace }}

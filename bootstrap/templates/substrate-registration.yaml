@@ -1,0 +1,38 @@
+{{- if .Values.prAgent.enabled }}
+# The install lists system:serviceaccount:<prAgent.namespace>:substrate-registration as an owner of the
+# control plane. This name and this namespace give the Job that service account.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-registration
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.substrate.repoURL | quote }}
+    targetRevision: {{ .Values.substrate.revision | quote }}
+    path: charts/substrate-registration
+    helm:
+      valuesObject:
+        {{- $registration := dict
+          "snapshotStorageLocation" (printf "objectstore://%s" .Values.substrate.bucket)
+          "actors" (include "prAgent.actors" . | fromJsonArray)
+          "substrate" (dict "version" .Values.prAgent.registration.version "namespace" .Values.substrate.namespace)
+          "image" (dict "digest" .Values.prAgent.registration.digest)
+          "nodeSelector" .Values.substrate.nodeSelector -}}
+        {{- mergeOverwrite $registration .Values.prAgent.registration.helmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.prAgent.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 2m
+        maxDuration: 10m
+{{- end }}

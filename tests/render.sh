@@ -114,4 +114,145 @@ is "the worker count is a value of this repo" "$?" "$out"
 ! helm template b "$repo/bootstrap" --set substrate.enabled=false --set rustfs.enabled=true | grep -q 'substrate-workers'
 is "RustFS alone installs no Substrate workers" "$?"
 
+# ---- pr-agent --------------------------------------------------------------------------
+pr_agent=(--set prAgent.enabled=true --set prAgent.modelEndpoint=http://model.example.test:11434)
+for app in substrate-actors substrate-registration substrate-idle-suspend; do
+  ! helm template b "$repo/bootstrap" | grep -q "name: $app\$"
+  is "pr-agent is off by default: no $app Application" "$?"
+done
+helm template b "$repo/bootstrap" --show-only templates/substrate-install.yaml | grep -q 'enabled":false'
+is "by default the install turns egress credential injection off" "$?"
+helm template b "$repo/bootstrap" --show-only templates/substrate-prereqs.yaml | grep -q credentialPolicy \
+  && report "by default the prerequisites carry no credential policy" "present" || report "by default the prerequisites carry no credential policy" ok
+helm template b "$repo/bootstrap" --show-only templates/first-objects.yaml | grep -q prAgentNamespace \
+  && report "by default first-objects makes no pr-agent token" "present" || report "by default first-objects makes no pr-agent token" ok
+out="$(helm template b "$repo/bootstrap" --set prAgent.enabled=true 2>&1)"
+grep -q 'prAgent.modelEndpoint' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "pr-agent without a model endpoint fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" --set prAgent.enabled=true --set substrate.enabled=false --set prAgent.modelEndpoint=http://model.example.test:11434 2>&1)"
+grep -q 'needs substrate.enabled' <<<"$out"
+is "pr-agent without Substrate fails the render" "$?" "$out"
+
+for app in substrate-workers substrate-actors substrate-registration substrate-idle-suspend; do
+  helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.idleSuspend.enabled=true --show-only "templates/$app.yaml" | grep -o 'sync-wave: "[0-9]*"'
+done | tr -d '
+' | grep -q 'sync-wave: "8"sync-wave: "9"sync-wave: "10"sync-wave: "11"'
+is "the workers come first, then the actor, its registration and the idle suspend" "$?"
+! helm template b "$repo/bootstrap" "${pr_agent[@]}" | grep -q 'name: substrate-idle-suspend$'
+is "the idle suspend stays off until its switch is on" "$?"
+
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
+grep -q 'path: charts/substrate-actor' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out" && grep -q 'snapshotStorageLocation: objectstore://substrate-snapshots' <<<"$out"
+is "the actor chart installs from the pinned Substrate repo into the pr-agent namespace" "$?" "$out"
+grep -Eq 'image: pragent/pr-agent:[0-9]+\.[0-9]+\.[0-9]+-gitlab_webhook@sha256:[0-9a-f]{64}$' <<<"$out" && ! grep -q ':latest' <<<"$out"
+is "the pr-agent image has a version tag and a digest, never latest" "$?" "$out"
+grep -q 'CONFIG__MODEL: ollama/qwen3-coder:30b' <<<"$out" && grep -q "CONFIG__FALLBACK_MODELS: '\[\]'" <<<"$out" && grep -q 'CONFIG__CUSTOM_MODEL_MAX_TOKENS: "16000"' <<<"$out" \
+  && grep -q 'CONFIG__DUPLICATE_PROMPT_EXAMPLES: "true"' <<<"$out" && grep -q 'OLLAMA__API_BASE: http://model.example.test:11434' <<<"$out"
+is "the model settings follow the model prefix, and the endpoint is the value" "$?" "$out"
+grep -q 'credentialUri: ate-secret://k8s.io/default/pr-agent/gitlab-pr-agent/token' <<<"$out" && grep -q 'header: Authorization' <<<"$out" \
+  && grep -q 'GITLAB__AUTH_TYPE: oauth_token' <<<"$out" && ! grep -Eq 'glpat-|PERSONAL_ACCESS_TOKEN: [^r]' <<<"$out"
+is "the GitLab token is set by the egress proxy from the Secret, and no token is in the values" "$?" "$out"
+grep -A3 -- '- hostnames:' <<<"$out" | grep -q 'model.example.test' && grep -q -- '- 11434' <<<"$out"
+is "the egress policy allows the host and port of the model endpoint" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=ollama/other:7b --set prAgent.contextLength=32000 --show-only templates/substrate-actors.yaml)"
+grep -q 'CONFIG__MODEL: ollama/other:7b' <<<"$out" && grep -q 'CONFIG__CUSTOM_MODEL_MAX_TOKENS: "32000"' <<<"$out"
+is "the model and the context length are values" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=openai/example-model --set prAgent.modelEndpoint=https://llm.example.test/v1 --set prAgent.egressTrustBundle=true --show-only templates/substrate-actors.yaml)"
+grep -q 'CONFIG__MODEL: openai/example-model' <<<"$out" && grep -q 'OPENAI__API_BASE: https://llm.example.test/v1' <<<"$out" && ! grep -q 'OLLAMA__API_BASE' <<<"$out" && ! grep -q 'OPENAI__KEY' <<<"$out"
+is "an openai model sets the OpenAI base URL and no Ollama setting, and no key when there is no key Secret" "$?" "$out"
+grep -B3 'protocol: https' <<<"$out" | grep -q 'llm.example.test' && grep -B3 'protocol: https' <<<"$out" | grep -q -- '- 443' && [ "$(grep -c 'credentialUri' <<<"$out")" -eq 1 ]
+is "an https endpoint gets an https egress rule on port 443 and no credential" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=openai/example-model --set prAgent.modelEndpoint=https://llm.example.test --set prAgent.egressTrustBundle=true --set prAgent.modelApiKeySecret.name=model-key --set prAgent.modelApiKeySecret.key=api-key --show-only templates/substrate-actors.yaml)"
+grep -Eq 'credentialUri: ate-secret://k8s.io/default/[a-z-]+/model-key/api-key' <<<"$out" && grep -q 'OPENAI__KEY: replaced-by-the-egress-proxy' <<<"$out"
+is "a model key Secret is sent by the egress proxy and the actor holds a placeholder only" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelEndpoint=http://192.0.2.10:11434 2>&1)"
+grep -q 'DNS name, not an IP address' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "a model endpoint that is an IP address fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelEndpoint=ftp://model.example.test 2>&1)"
+grep -q 'must start with http' <<<"$out"
+is "a model endpoint that is not http or https fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=other/model 2>&1)"
+grep -q 'must start with one of: ollama/, openai/' <<<"$out"
+is "a model with an unknown prefix fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=openai/example-model --set prAgent.modelEndpoint=https://llm.example.test 2>&1)"
+grep -q 'egress gateway CA' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "an https model endpoint without the trust bundle switch fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.gitlabUrl=https://git.example.test 2>&1)"
+grep -q 'egress gateway CA' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "an https GitLab address without the trust bundle switch fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=openai/example-model --set prAgent.modelEndpoint=https://llm.example.test --set prAgent.egressTrustBundle=true --show-only templates/substrate-actors.yaml)"
+missing=0
+for setting in SSL_CERT_FILE REQUESTS_CA_BUNDLE GITLAB__SSL_VERIFY; do
+  grep -q "$setting: /run/ate/egress-trust-bundle/trust-bundle.pem" <<<"$out" || missing=1
+done
+[ "$missing" -eq 0 ] && grep -q 'egressTrustBundle: true' <<<"$out"
+is "an https address with the switch on gives the actor the trust bundle settings" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
+! grep -q 'SSL_CERT_FILE' <<<"$out" && ! grep -q 'egressTrustBundle' <<<"$out"
+is "an http-only actor has no trust bundle settings" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelApiKeySecret.name=model-key --set prAgent.modelApiKeySecret.key=api-key --show-only templates/substrate-actors.yaml)"
+grep -q 'OLLAMA__API_KEY: replaced-by-the-egress-proxy' <<<"$out" && grep -Eq 'credentialUri: ate-secret://k8s.io/default/[a-z-]+/model-key/api-key' <<<"$out"
+is "an ollama model with a key Secret holds a placeholder key and the egress proxy sends the key" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelApiKeySecret.name=model-key 2>&1)"
+grep -q 'needs a key' <<<"$out" && ! grep -q 'kind: Application' <<<"$out" && ! grep -q 'nil' <<<"$out"
+is "a model key Secret with a name and no key fails the render with a clear message" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelApiKeySecret.key=api-key 2>&1)"
+grep -q 'needs a name' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "a model key Secret with a key and no name fails the render with a clear message" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.gitlabExtraUrls={https://git.example.test}' --set prAgent.egressTrustBundle=true --show-only templates/substrate-actors.yaml)"
+[ "$(grep -c 'gitlab-pr-agent/token' <<<"$out")" -eq 2 ] && grep -q 'git.example.test' <<<"$out" && grep -q -- '- 443' <<<"$out"
+is "an extra GitLab address gets its own egress rule with the GitLab token" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.gitlabExtraUrls={git.example.test}' 2>&1)"
+grep -q 'prAgent.gitlabExtraUrls must start with http' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "an extra GitLab address without a scheme fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.gitlabExtraUrls={http://192.0.2.20}' 2>&1)"
+grep -q 'prAgent.gitlabExtraUrls must use a DNS name' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "an extra GitLab address that is an IP address fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.gitlabExtraUrls={http://gitlab.gitlab.svc.cluster.local}' 2>&1)"
+grep -q 'repeats the GitLab host' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "an extra GitLab address that repeats prAgent.gitlabUrl fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.gitlabExtraUrls={http://model.example.test}' 2>&1)"
+grep -q 'same host as prAgent.modelEndpoint' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "an extra GitLab address with the host of the model endpoint fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.gitlabExtraUrls=null --show-only templates/substrate-actors.yaml 2>&1)"
+[ "$(grep -c 'gitlab-pr-agent/token' <<<"$out")" -eq 1 ] && ! grep -q 'nil' <<<"$out"
+is "a null list of extra GitLab addresses is an empty list" "$?" "$out"
+out="$(helm template b "$repo/bootstrap")"
+! grep -q 'pr-agent' <<<"$out" && grep -q 'system:serviceaccount:substrate-system:substrate-registration' <<<"$out"
+is "with pr-agent off nothing in the render names pr-agent, and the install keeps its registration owner" "$?" "$out"
+! grep -q 'webhook:' <<<"$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
+is "with no shim image the actor has no webhook" "$?"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.webhook.port=8080 --set prAgent.hopToken=custom-hop-token --show-only templates/substrate-actors.yaml)"
+grep -q 'webhook:' <<<"$out" && grep -q 'name: gitlab-pr-agent' <<<"$out" && grep -q 'key: WEBHOOK_SECRET' <<<"$out"
+is "a webhook setting gives the actor a shim that reads the key WEBHOOK_SECRET of the generated Secret" "$?" "$out"
+grep -q 'GITLAB__SHARED_SECRET: custom-hop-token' <<<"$out" && grep -q 'hopToken: custom-hop-token' <<<"$out"
+is "the shim sends the hop token that the actor expects as its shared secret, from one value" "$?" "$out"
+
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-registration.yaml)"
+grep -q 'path: charts/substrate-registration' <<<"$out" && grep -q 'name: substrate-registration$' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out" \
+  && grep -Eq 'digest: sha256:[0-9a-f]{64}' <<<"$out" && grep -q 'name: pr-agent' <<<"$out"
+is "the registration runs as substrate-registration in pr-agent, the owner that the install names, and pins its image" "$?" "$out"
+helm template b "$repo/bootstrap" --show-only templates/substrate-install.yaml "${pr_agent[@]}" | grep -q 'k8s.io' \
+  && helm template b "$repo/bootstrap" --show-only templates/substrate-install.yaml "${pr_agent[@]}" | grep -q 'system:serviceaccount:pr-agent:substrate-registration'
+is "the install uses the Kubernetes Secrets credential provider and lists the registration account as an owner" "$?"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-prereqs.yaml)"
+grep -q 'credentialPolicy' <<<"$out" && grep -q 'atespace: reviews' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out"
+is "the prerequisites grant the atespace the pr-agent namespace, before the install" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/first-objects.yaml)"
+grep -q 'prAgentNamespace: pr-agent' <<<"$out"
+is "first-objects makes the pr-agent Secret in the pr-agent namespace" "$?" "$out"
+for app in substrate-actors substrate-registration substrate-idle-suspend; do
+  ! helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.idleSuspend.enabled=true --show-only "templates/$app.yaml" | grep -q CreateNamespace
+  is "$app does not create the pr-agent namespace, so first-objects is its only owner" "$?"
+done
+[ "$(helm template f "$repo/apps/first-objects" --set prAgentNamespace=pr-agent | grep -A8 '^kind: Namespace' | grep -c '  name: pr-agent$')" -eq 1 ]
+is "first-objects makes the pr-agent namespace once" "$?"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.idleSuspend.enabled=true --show-only templates/substrate-idle-suspend.yaml)"
+grep -q 'path: charts/substrate-idle-suspend' <<<"$out" && grep -q 'url: http://prometheus-prometheus.prometheus.svc:9090' <<<"$out" && grep -q 'name: pr-agent' <<<"$out" && grep -q 'atespace: reviews' <<<"$out"
+is "the idle suspend watches the actor and reads the Prometheus of the platform" "$?" "$out"
+
+# The public repo names no host, address or environment. The model endpoint is a consumer value.
+! grep -rEn '(^|[^0-9.])(10\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|\.lan([^A-Za-z]|$)|\.ts\.net' "$repo/bootstrap/values.yaml" "$repo/bootstrap/templates" "$repo/apps/substrate-prereqs" "$repo/apps/first-objects" | grep -v 'git-ci.example.ts.net'
+is "no private address or LAN name is in the bootstrap values or templates" "$?"
+
 [ "$failures" -eq 0 ] && echo "all render tests passed" || { echo "$failures render test(s) failed"; exit 1; }

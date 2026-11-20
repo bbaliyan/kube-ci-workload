@@ -22,6 +22,7 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster insta
 | `gitlab-mirror` | `gitlab` | `token` | `first-objects` |
 | `gitlab-exporter` | `gitlab` | `gitlabToken` | `first-objects` |
 | `gitlab-runner` | `gitlab-runner` | `runner-token`, `runner-registration-token` | `first-objects` |
+| `gitlab-pr-agent` | `prAgent.namespace` | `token`, `WEBHOOK_SECRET` (only with `prAgent.enabled`) | `first-objects` |
 | `truenas-iscsi-ci-driver-config` | `kube-system` | `driver-config-file.yaml` (democratic-csi driver config) | the consumer |
 | `github-source` | `gitlab` | `token` (read-only GitHub token) | the consumer |
 | `operator-oauth` | `tailscale` | `client_id`, `client_secret` | the consumer |
@@ -53,6 +54,70 @@ The bootstrap makes the storage class `nas`, the default class, with democratic-
 ## The platform-values/ directory
 
 `platform-values/observability.yaml` sets the size, class and retention of Prometheus, Alertmanager, Grafana and Loki. The platform `observability` Application reads it when the cluster passes this repo as its workloads repo. A merge to `main` reaches the cluster at the next sync.
+
+## pr-agent
+
+pr-agent reviews merge requests. It runs as an Agent Substrate actor and uses a model that runs outside the cluster. It is off by default. It needs `substrate.enabled`.
+
+The bootstrap makes these parts when `prAgent.enabled` is true:
+
+| Part | Wave | What it does |
+|---|---|---|
+| `first-objects` | 1 | Makes the namespace `prAgent.namespace` and the Secret `gitlab-pr-agent` in it: a Developer group token and a random webhook secret. It is the only owner of the namespace. |
+| `substrate-prereqs` | 4 | Makes the credential policy that lets the atespace read Secrets of `prAgent.namespace` only. |
+| `substrate-install` | 7 | Turns on the Kubernetes Secrets credential provider. |
+| `substrate-actors` | 9 | Defines the actor: the pinned `gitlab_webhook` image, the model settings and the egress policy. |
+| `substrate-registration` | 10 | Registers the actor in the control plane. |
+| `substrate-idle-suspend` | 11 | Suspends the idle actor. It has its own switch and is off. |
+
+The actor never holds the GitLab token. Its egress policy lets only the GitLab host and the model endpoint through, and the egress proxy sets the `Authorization` header from the Secret.
+
+### Enable it
+
+The actor talks to a model server that runs outside the cluster. The consumer sets the model, the address of the server and, if the server has a login, the Secret that holds its key.
+
+1. Set `prAgent.model` to a model name of pr-agent. The prefix must be `ollama/` or `openai/`.
+2. For any server with an OpenAI-compatible API, use the prefix `openai/`.
+3. Set `prAgent.modelEndpoint` to the base URL of the server. If you do not set it, the render fails.
+4. Use a DNS name, not an IP address, because the egress policy matches host names.
+5. If the address is `https`, set `prAgent.egressTrustBundle` to `true`. The `substrate-actor` chart of `substrate.revision` must accept that key. If it does not, the render fails.
+6. If the server has a login, create a Secret in `prAgent.namespace` that holds its key.
+7. Set `prAgent.modelApiKeySecret` to the `name` and the `key` of that Secret.
+8. Set `prAgent.contextLength` to the context length of the server, in tokens. The two numbers must be equal.
+9. Set `prAgent.enabled` to `true`.
+10. Sync the bootstrap.
+11. Verify that the Applications `substrate-actors` and `substrate-registration` are Healthy.
+
+The egress proxy sends the key as a bearer token, so the actor never holds it. For both prefixes, the actor holds only a placeholder in `OLLAMA__API_KEY` or `OPENAI__KEY`. For `ollama/`, verify with one review that the Ollama client of pr-agent sends the header.
+
+Example for Ollama on a laptop:
+
+1. On the model host, run `ollama pull qwen3-coder:30b`.
+2. On the model host, start Ollama with `OLLAMA_HOST=0.0.0.0` and `OLLAMA_CONTEXT_LENGTH=16000`.
+3. Set `prAgent.modelEndpoint` to `http://<host name>:11434`.
+
+Warning: Ollama has no login. Make it reachable from the LAN only.
+
+The model and the endpoint are values, so no model name or address is in this repo. A model that runs on a laptop is good enough to test the wiring. It may not give good reviews.
+
+### Not done yet
+
+- The webhook shim. GitLab cannot reach a suspended actor. The `substrate-actor` chart can run a shim that checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. The shim then sends `prAgent.hopToken` to the actor. A chart revision with the shim is not pinned here yet. After you pin it, set `prAgent.webhook`, for example with `ingress` or `allowFrom`.
+- The GitLab webhook. After the mirror sync has made the project, add a project webhook with the address of the shim and the value of `WEBHOOK_SECRET`. If the shim runs in the cluster, an administrator must allow webhooks to local addresses.
+- The idle suspend. To turn it on, set `prAgent.idleSuspend.enabled`. Prometheus must scrape the control plane. A cluster administrator must give the service account `substrate-idle-suspend` the `editor` role in the atespace with `kubectl ate update access-policy`.
+
+### Renew the token
+
+The group token has the Developer role and the `api` scope. The command `/describe` edits the title and the description of a merge request, and a Reporter cannot do that. It lives for 364 days. `first-objects` never replaces a Secret that exists. To renew the token:
+
+1. Delete the Secret `gitlab-pr-agent` in `prAgent.namespace`.
+2. Sync `first-objects`.
+
+`first-objects` revokes the active `pr-agent` tokens of the group when the Secret is missing, then makes a new token. This also covers a run that made a token and could not save the Secret.
+
+### Long lists
+
+GitLab builds the links to the next page of a long list (an MR with more than 100 notes, diffs or discussions, the page size of pr-agent 0.50.0) from its external URL. python-gitlab follows those links, and pr-agent 0.50.0 has no setting to keep the base URL. The egress policy allows only `prAgent.gitlabUrl`, so such a call can be blocked. If a review of a large MR fails, add the external URL of GitLab to `prAgent.gitlabExtraUrls`. The egress proxy then sets the token for that host too.
 
 ## Upgrade GitLab
 

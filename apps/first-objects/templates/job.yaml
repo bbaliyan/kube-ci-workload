@@ -38,6 +38,8 @@ spec:
               value: {{ .Values.gitlabApi | quote }}
             - name: MIRROR_GROUP
               value: {{ .Values.mirrorGroup | quote }}
+            - name: PR_AGENT_NAMESPACE
+              value: {{ .Values.prAgentNamespace | quote }}
           resources:
             requests:
               cpu: 50m

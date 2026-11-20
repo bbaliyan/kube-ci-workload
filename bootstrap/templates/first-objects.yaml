@@ -13,7 +13,9 @@ spec:
     path: apps/first-objects
     helm:
       valuesObject:
-        {{- mergeOverwrite (dict "nodeSelector" .Values.firstObjects.nodeSelector) .Values.firstObjects.helmValues | toYaml | nindent 8 }}
+        {{- $values := dict "nodeSelector" .Values.firstObjects.nodeSelector -}}
+        {{- if .Values.prAgent.enabled }}{{- $_ := set $values "prAgentNamespace" .Values.prAgent.namespace -}}{{- end }}
+        {{- mergeOverwrite $values .Values.firstObjects.helmValues | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: gitlab

@@ -107,3 +107,65 @@ substrate:
     cpu: "1"
     memory: 2Gi
     helmValues: {}
+
+# The pr-agent actor: it reviews merge requests with a model that runs outside the cluster. It is
+# off until you set modelEndpoint and enabled. It needs substrate.enabled. See the README, "pr-agent".
+prAgent:
+  enabled: false
+  # The atespace of the actor.
+  atespace: reviews
+  # The namespace of the actor, its registration and the Secrets of the actor: gitlab-pr-agent (keys token
+  # and WEBHOOK_SECRET) and the key Secret of the model server. first-objects makes the namespace and is its only
+  # owner. The credential provider may read Secrets of this namespace only. Do not use a namespace of Substrate.
+  namespace: pr-agent
+  # The gitlab_webhook image of pr-agent. Pin the tag and the digest.
+  # renovate: datasource=docker depName=pragent/pr-agent versioning=docker
+  image: pragent/pr-agent:0.50.0-gitlab_webhook@sha256:dd10e3f8f5079b42e54e46c231932d28d5d48084337998e04fe7acf667d70840
+  # The model, as the model name of pr-agent: a provider prefix and a name. The prefix must be ollama or openai
+  # (the latter for any server with an OpenAI-compatible API).
+  model: ollama/qwen3-coder:30b
+  # The base URL of the model server. The consumer sets it. Use a DNS name, not an IP address. Empty fails the render.
+  modelEndpoint: ""
+  # Optional. A Secret in `namespace` that holds the key of the model server: {name: ..., key: ...}. The egress
+  # proxy sends it as a bearer token, so the actor never holds it. Leave it empty for a server with no login.
+  # The pr-agent settings OLLAMA__API_KEY and OPENAI__KEY hold only a placeholder.
+  modelApiKeySecret: {}
+  # The context length of the model server, in tokens. It must equal the setting on the server.
+  contextLength: 16000
+  # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
+  gitlabUrl: http://gitlab.gitlab.svc.cluster.local
+  # More GitLab addresses that the actor may call, with the same token. GitLab builds the links to the next page of
+  # a long list from its external URL, and python-gitlab follows them. pr-agent has no setting to keep the base URL.
+  # If a review of a large merge request fails on a page link, add the external URL here. An https address needs
+  # egressTrustBundle.
+  gitlabExtraUrls: []
+  # The webhook shim checks the real webhook secret and sends this fixed value in X-Gitlab-Token. The actor
+  # expects the same value in GITLAB__SHARED_SECRET. It is public and is not the webhook secret.
+  hopToken: internal-hop-from-the-webhook-shim
+  # Set true only when the substrate-actor chart of substrate.revision accepts the key egressTrustBundle, which mounts
+  # the CA of the egress gateway into the actor. An https gitlabUrl or modelEndpoint needs it. Without it
+  # the render fails on https, because every TLS call from the actor would fail.
+  egressTrustBundle: false
+  cpuMillicores: 1000
+  memoryBytes: 2147483648
+  # The webhook shim of the substrate-actor chart. It checks X-Gitlab-Token against the key WEBHOOK_SECRET of the
+  # Secret gitlab-pr-agent and sends hopToken to the actor. It needs a chart revision that has the shim.
+  # Empty means no shim, and GitLab cannot reach the actor. Set the keys of `webhook`, for example ingress and allowFrom.
+  webhook: {}
+  # Extra values for the actor chart, which the registration chart does not read.
+  actorHelmValues: {}
+  registration:
+    # The registration image: kubectl-ate, jq, curl and bash. The chart schema accepts only a release number
+    # as the tag, and the digest decides what the node pulls. The digest is the image of the commit
+    # that substrate.revision pins (substrate-registration:main-0d7451c).
+    version: v1.0.0
+    digest: sha256:96c918df2e163ee03f42d96a0f22b7780080416a17583ba481088d0db82f2340
+    helmValues: {}
+  # Suspends the actor when it is idle. Off by default: it needs a Prometheus that scrapes the control plane,
+  # and a cluster admin must grant its service account the editor role in the atespace (README, "pr-agent").
+  idleSuspend:
+    enabled: false
+    # The Prometheus of kube-platform.
+    prometheusUrl: http://prometheus-prometheus.prometheus.svc:9090
+    idleMinutes: 30
+    helmValues: {}
