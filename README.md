@@ -102,7 +102,7 @@ The model and the endpoint are values, so no model name or address is in this re
 
 ### Not done yet
 
-- The webhook shim. GitLab cannot reach a suspended actor. The `substrate-actor` chart can run a shim that checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. The shim then sends `prAgent.hopToken` to the actor. A chart revision with the shim is not pinned here yet. After you pin it, set `prAgent.webhook`, for example with `ingress` or `allowFrom`.
+- The webhook shim. GitLab cannot reach a suspended actor. The `substrate-actor` chart can run a shim that checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. The shim then sends `prAgent.hopToken` to the actor. The pinned chart revision has the shim. Set `prAgent.webhook`, for example with `ingress` or `allowFrom`.
 - The GitLab webhook. After the mirror sync has made the project, add a project webhook with the address of the shim and the value of `WEBHOOK_SECRET`. If the shim runs in the cluster, an administrator must allow webhooks to local addresses.
 - The idle suspend. To turn it on, set `prAgent.idleSuspend.enabled`. Prometheus must scrape the control plane. A cluster administrator must give the service account `substrate-idle-suspend` the `editor` role in the atespace with `kubectl ate update access-policy`.
 
