@@ -13,5 +13,9 @@ gitlabApi: http://gitlab.gitlab.svc.cluster.local
 # The group that holds the mirror projects.
 mirrorGroup: mirror
 
+# The namespace for the pr-agent Secret (token and webhook secret). Empty makes no token, no
+# namespace and no Role.
+prAgentNamespace: ""
+
 nodeSelector: {}
 tolerations: []

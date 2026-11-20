@@ -72,6 +72,7 @@ case "$*" in
   *"--request GET"*"/groups/mirror"*)
     if [ -n "${GROUP_EXISTS:-}" ]; then echo '{"id":7}'; else echo '{"message":"404 Group Not Found"}' >&2; exit 22; fi ;;
   *"--request POST"*"/groups/7/access_tokens"*"name=pipeline-exporter"*) echo '{"token":"EXPORTERTOKEN345"}' ;;
+  *"--request POST"*"/groups/7/access_tokens"*"name=pr-agent"*) echo '{"token":"PRAGENTTOKEN678"}' ;;
   *"--request POST"*"/groups/7/access_tokens"*) echo '{"token":"MIRRORTOKEN789"}' ;;
   *"--request POST"*"/groups"*) echo '{"id":7}' ;;
   *"--request POST"*"/user/runners"*) echo '{"token":"glrt-RUNNERTOKEN012"}' ;;
@@ -94,7 +95,7 @@ run() { # case name, extra env assignments...
   code=$?
 }
 no_secret_in() { # text: none of the token values is in it
-  ! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012' <<<"$1"
+  ! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012|PRAGENTTOKEN678' <<<"$1"
 }
 
 # ---- a new GitLab ------------------------------------------------------------------
@@ -109,7 +110,7 @@ no_secret_in "$out"
 is "no token or password is printed" "$?" "$out"
 grep -q 'create secret generic gitlab-exporter --from-literal=gitlabToken=EXPORTERTOKEN345' "$case_dir/kubectl.log"
 is "the exporter Secret holds the exporter token, not the mirror token" "$?" "$(cat "$case_dir/kubectl.log")"
-! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012' "$case_dir/curl.log"
+! grep -qE 'ROOTPASSWORD123|ADMINTOKEN456|MIRRORTOKEN789|EXPORTERTOKEN345|RUNNERTOKEN012|PRAGENTTOKEN678' "$case_dir/curl.log"
 is "no token is on a curl command line" "$?" "$(cat "$case_dir/curl.log")"
 [ "$(grep -c 'PRIVATE-TOKEN: ADMINTOKEN456' "$case_dir/curl.stdin")" -ge 3 ]
 is "the admin token reaches curl through stdin" "$?" "$(cat "$case_dir/curl.stdin")"
@@ -121,6 +122,25 @@ grep -q 'access_level=20' "$case_dir/curl.log" && grep -q 'scopes\[\]=read_api' 
 is "the group is private, the exporter token only reads, the mirror token is a maintainer and the runner takes untagged jobs" "$?" "$(cat "$case_dir/curl.log")"
 grep -q 'if true' "$case_dir/rails.code"
 is "a new GitLab gets a new root password" "$?" "$(cat "$case_dir/rails.code")"
+
+# ---- the pr-agent token ------------------------------------------------------------
+[ "$(awk '{print $1}' "$case_dir/applied" | grep -c pr-agent)" -eq 0 ] && ! grep -q 'name=pr-agent' "$case_dir/curl.log"
+is "with no pr-agent namespace it makes no pr-agent token" "$?" "$(cat "$case_dir/curl.log")"
+SECRETS="" run pr-agent PR_AGENT_NAMESPACE=substrate-system GROUP_EXISTS=1
+[ "$code" -eq 0 ] && grep -q '^gitlab-pr-agent token WEBHOOK_SECRET' "$case_dir/applied"
+is "a pr-agent namespace makes the Secret with a token and a webhook secret" "$?" "exit $code: $out $(cat "$case_dir/applied")"
+grep -q -- '-n substrate-system create secret generic gitlab-pr-agent --from-literal=token=PRAGENTTOKEN678 --from-literal=WEBHOOK_SECRET=[0-9a-f]\{64\}' "$case_dir/kubectl.log"
+is "the Secret is in the pr-agent namespace, holds the pr-agent token and a 64-character random secret" "$?" "$(cat "$case_dir/kubectl.log")"
+grep -q 'name=pr-agent' "$case_dir/curl.log" && grep -A3 'name=pr-agent' "$case_dir/curl.log" | grep -q 'access_level=30' && grep 'name=pr-agent' "$case_dir/curl.log" | grep -q 'scopes\[\]=api'
+is "the pr-agent token is a Developer token with the api scope" "$?" "$(grep pr-agent "$case_dir/curl.log")"
+no_secret_in "$out"
+is "no pr-agent token is printed" "$?" "$out"
+SECRETS="gitlab-pr-agent" run pr-agent-again PR_AGENT_NAMESPACE=substrate-system GROUP_EXISTS=1
+[ "$code" -eq 0 ] && ! grep -q 'name=pr-agent' "$case_dir/curl.log"
+is "an existing pr-agent Secret is kept and no new token is made" "$?" "exit $code: $out"
+SECRETS="" run pr-agent-bad PR_AGENT_NAMESPACE='Bad_NS'
+[ "$code" -ne 0 ] && [ ! -e "$case_dir/rails.log" ]
+is "a bad pr-agent namespace is refused" "$?" "exit $code: $out"
 
 # ---- run again -------------------------------------------------------------------------
 SECRETS="gitlab-root gitlab-mirror gitlab-exporter gitlab-runner" run again GROUP_EXISTS=1

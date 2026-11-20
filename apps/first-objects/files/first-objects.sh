@@ -7,6 +7,8 @@
 #   gitlab-mirror  (namespace $GITLAB_NAMESPACE)  key token: a group token that pushes to the mirror group
 #   gitlab-exporter (namespace $GITLAB_NAMESPACE) key gitlabToken: a read-only group token for the pipeline exporter
 #   gitlab-runner  (namespace $RUNNER_NAMESPACE)  keys runner-token, runner-registration-token
+#   gitlab-pr-agent (namespace $PR_AGENT_NAMESPACE) keys token, WEBHOOK_SECRET: a Developer group token that
+#                  posts review comments, and a random secret for the GitLab webhook. Only if PR_AGENT_NAMESPACE is set.
 #
 # A new GitLab has no group, no runner and no known root password, and the GitLab API
 # cannot create the first token. The one thing that can is GitLab's own `gitlab-rails runner`,
@@ -16,6 +18,7 @@
 #   GITLAB_NAMESPACE  required. GITLAB_POD required. RUNNER_NAMESPACE required.
 #   GITLAB_API        required. The address of the GitLab API, for example http://gitlab.gitlab.svc.
 #   MIRROR_GROUP      optional. Default mirror.
+#   PR_AGENT_NAMESPACE optional. The namespace for the pr-agent Secret. Empty makes no pr-agent token.
 #   GITLAB_EXEC       optional. The command that runs a program inside the GitLab container.
 #                     Default: kubectl -n $GITLAB_NAMESPACE exec $GITLAB_POD --
 #   GITLAB_READY_TIMEOUT optional. Default 30m.
@@ -29,6 +32,8 @@ fail() { echo "first-objects: $*" >&2; exit 1; }
 : "${GITLAB_NAMESPACE:?set GITLAB_NAMESPACE}" "${GITLAB_POD:?set GITLAB_POD}" "${RUNNER_NAMESPACE:?set RUNNER_NAMESPACE}" "${GITLAB_API:?set GITLAB_API}"
 group="${MIRROR_GROUP:-mirror}"
 [[ "$group" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "bad MIRROR_GROUP: $group"
+pr_agent_namespace="${PR_AGENT_NAMESPACE:-}"
+[[ -z "$pr_agent_namespace" || "$pr_agent_namespace" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || fail "bad PR_AGENT_NAMESPACE: $pr_agent_namespace"
 [[ "$GITLAB_API" =~ ^https?://[^/@]+$ ]] || fail "GITLAB_API must be http(s)://host with no path, user or token"
 case "$-" in *x*) fail "shell tracing is on. Stopping before this script prints a token." ;; esac
 
@@ -118,6 +123,18 @@ if ! have_secret "$GITLAB_NAMESPACE" gitlab-exporter; then
   put_secret "$GITLAB_NAMESPACE" gitlab-exporter "gitlabToken=$exporter_token"
   unset exporter_token
   echo "first-objects: saved Secret gitlab-exporter"
+fi
+
+# The token has the same life as the others (364 days). A Secret that exists is never replaced, so
+# delete the Secret to make a new token before the old one expires.
+if [ -n "$pr_agent_namespace" ] && ! have_secret "$pr_agent_namespace" gitlab-pr-agent; then
+  expires="$(date -u -d '+364 days' +%Y-%m-%d)"
+  pr_agent_token="$(api POST "/groups/$group_id/access_tokens"     --data-urlencode name=pr-agent --data-urlencode "expires_at=$expires" --data-urlencode access_level=30     --data-urlencode "scopes[]=api" | jq -er .token)" || fail "cannot create the pr-agent token"
+  webhook_secret="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' 
+')"
+  put_secret "$pr_agent_namespace" gitlab-pr-agent "token=$pr_agent_token" "WEBHOOK_SECRET=$webhook_secret"
+  unset pr_agent_token webhook_secret
+  echo "first-objects: saved Secret gitlab-pr-agent"
 fi
 
 if ! have_secret "$RUNNER_NAMESPACE" gitlab-runner; then
