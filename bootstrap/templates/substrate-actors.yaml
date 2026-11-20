@@ -1,0 +1,36 @@
+{{- if .Values.prAgent.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-actors
+  namespace: argocd
+  annotations:
+    # After the workers. The registration Job reads the ConfigMaps that this chart renders.
+    argocd.argoproj.io/sync-wave: "9"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.substrate.repoURL | quote }}
+    targetRevision: {{ .Values.substrate.revision | quote }}
+    path: charts/substrate-actor
+    helm:
+      valuesObject:
+        {{- $actors := dict
+          "snapshotStorageLocation" (printf "objectstore://%s" .Values.substrate.bucket)
+          "actors" (include "prAgent.actors" . | fromJsonArray) -}}
+        {{- mergeOverwrite $actors .Values.prAgent.actorHelmValues | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.prAgent.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 2m
+        maxDuration: 10m
+{{- end }}

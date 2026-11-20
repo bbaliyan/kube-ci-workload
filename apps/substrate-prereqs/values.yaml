@@ -11,3 +11,11 @@ controlPlaneNamespace: ate-system
 snapshotKeysSecret: snapshot-store-keys
 accessKeyKey: access-key-id
 secretKeyKey: secret-access-key
+
+# The credential provider of the control plane reads a Secret only in a namespace that the atespace
+# of the actor may use. The install makes this policy empty, and only when it is missing, so it is
+# made here, before the install. The provider reads it once at start.
+credentialPolicy:
+  enabled: false
+  atespace: reviews
+  namespace: substrate-system

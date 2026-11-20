@@ -107,3 +107,49 @@ substrate:
     cpu: "1"
     memory: 2Gi
     helmValues: {}
+
+# The pr-agent actor: it reviews merge requests with a model that runs outside the cluster. It is
+# off until you set ollamaUrl and enabled. It needs substrate.enabled. See the README, "pr-agent".
+prAgent:
+  enabled: false
+  # The atespace of the actor.
+  atespace: reviews
+  # The namespace of the actor, its registration and the Secret gitlab-pr-agent that first-objects
+  # makes (keys token and WEBHOOK_SECRET). The credential provider may read Secrets of this namespace only.
+  namespace: substrate-system
+  # The gitlab_webhook image of pr-agent. Pin the tag and the digest.
+  # renovate: datasource=docker depName=pragent/pr-agent versioning=docker
+  image: pragent/pr-agent:0.50.0-gitlab_webhook@sha256:dd10e3f8f5079b42e54e46c231932d28d5d48084337998e04fe7acf667d70840
+  # An Ollama model. The consumer sets the endpoint, for example http://host:11434. Empty fails the render.
+  model: ollama/qwen3-coder:30b
+  ollamaUrl: ""
+  # Must equal OLLAMA_CONTEXT_LENGTH on the Ollama server.
+  contextLength: 16000
+  # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
+  gitlabUrl: http://gitlab.gitlab.svc.cluster.local
+  # The actor is reached through the webhook shim, which checks the real webhook secret and sends
+  # this fixed value in X-Gitlab-Token. Nothing outside the cluster can reach the actor.
+  sharedSecret: internal-hop-from-the-webhook-shim
+  cpuMillicores: 1000
+  memoryBytes: 2147483648
+  # The webhook shim (a Deployment, a Service and an Ingress). No shim image is published yet, so this
+  # is empty and GitLab cannot reach the actor. Set the keys of `webhook` in the substrate-actor chart
+  # (image by digest, port, ingress). The chart reads the secret from the Secret gitlab-pr-agent.
+  webhook: {}
+  # Extra values for the actor chart, which the registration chart does not read.
+  actorHelmValues: {}
+  registration:
+    # The registration image: kubectl-ate, jq, curl and bash. The chart schema accepts only a release number
+    # as the tag, and the digest decides what the node pulls. The digest is the image of the commit
+    # that substrate.revision pins (substrate-registration:main-0d7451c).
+    version: v1.0.0
+    digest: sha256:96c918df2e163ee03f42d96a0f22b7780080416a17583ba481088d0db82f2340
+    helmValues: {}
+  # Suspends the actor when it is idle. Off by default: it needs a Prometheus that scrapes the control plane,
+  # and a cluster admin must grant its service account the editor role in the atespace (README, "pr-agent").
+  idleSuspend:
+    enabled: false
+    # The Prometheus of kube-platform.
+    prometheusUrl: http://prometheus-prometheus.prometheus.svc:9090
+    idleMinutes: 30
+    helmValues: {}

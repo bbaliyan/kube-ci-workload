@@ -29,7 +29,7 @@ spec:
             "clusterSize" "size0"
             "preview" "PerTemplateSnapshotLocation"
             "ateapi" (dict "authz" (dict "bootstrapOwners" "system:serviceaccount:ate-system:ate-client,system:serviceaccount:substrate-system:substrate-registration"))
-            "atenet" (dict "egress" (dict "credentialProvider" "{\"enabled\":false}")))
+            "atenet" (dict "egress" (dict "credentialProvider" (ternary "{\"name\":\"k8s.io\"}" "{\"enabled\":false}" .Values.prAgent.enabled))))
           "postgres" (dict
             "resources" (dict "requests" (dict "cpu" "250m" "memory" "512Mi") "limits" (dict "cpu" "2" "memory" "2Gi"))
             "storage" "10Gi") -}}
