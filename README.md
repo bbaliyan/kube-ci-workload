@@ -63,7 +63,7 @@ The bootstrap makes these parts when `prAgent.enabled` is true:
 
 | Part | Wave | What it does |
 |---|---|---|
-| `first-objects` | 1 | Makes the namespace `prAgent.namespace` and the Secret `gitlab-pr-agent` in it: a Developer group token and a random webhook secret. It is the only owner of the namespace. |
+| `first-objects` | 1 | Makes the namespace `prAgent.namespace` and the Secret `gitlab-pr-agent` in it: a Developer group token and a random webhook secret. With `prAgent.webhookProjects`, it also makes the project webhooks. It is the only owner of the namespace. |
 | `substrate-prereqs` | 4 | Makes the credential policy that lets the atespace read Secrets of `prAgent.namespace` only. |
 | `substrate-install` | 7 | Turns on the Kubernetes Secrets credential provider. |
 | `substrate-actors` | 9 | Defines the actor: the pinned `gitlab_webhook` image, the model settings and the egress policy. |
@@ -103,8 +103,33 @@ The model and the endpoint are values, so no model name or address is in this re
 ### Not done yet
 
 - The webhook shim. GitLab cannot reach a suspended actor. The `substrate-actor` chart can run a shim that checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. The shim then sends `prAgent.hopToken` to the actor. The pinned chart revision has the shim. Set `prAgent.webhook`, for example with `ingress` or `allowFrom`.
-- The GitLab webhook. After the mirror sync has made the project, add a project webhook with the address of the shim and the value of `WEBHOOK_SECRET`. If the shim runs in the cluster, an administrator must allow webhooks to local addresses.
 - The idle suspend. To turn it on, set `prAgent.idleSuspend.enabled`. Prometheus must scrape the control plane. A cluster administrator must give the service account `substrate-idle-suspend` the `editor` role in the atespace with `kubectl ate update access-policy`.
+
+### The GitLab webhook
+
+GitLab sends merge request events and comment events to the shim. A comment event carries a command such as `/review`. The webhook has no push events.
+
+With GitLab in the cluster, `first-objects` makes the webhook:
+
+1. Set `prAgent.webhook`, so the actor has a shim.
+2. Set `prAgent.webhookProjects` to the paths of the projects, for example `mirror/kube-compute`.
+3. Sync `first-objects` after the mirror sync has made the projects. A project that does not exist yet is skipped with a warning, and the next run makes its webhook.
+
+The webhook points at `http://pr-agent-webhook.<prAgent.namespace>.svc.cluster.local:<port>/webhook`. The port is `prAgent.webhook.port`, or 8080. Its secret token is `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`.
+
+Warning: the Job sets the instance setting `allow_local_requests_from_web_hooks_and_services` to `true`. It is an administrator setting for the whole GitLab, not for one project. It lets every webhook and integration call local addresses. Set `prAgent.webhookProjects` only if you accept that.
+
+Every run writes the full settings of the webhook again. The GitLab API does not return the secret token, so a run cannot see if it changed. This also repairs a hook that someone edited and picks up a renewed secret. A run never makes a second hook for the same address.
+
+The API has no timeout for one webhook. The limit is `gitlab_rails['webhook_timeout']` in `gitlab.rb` of a self-managed GitLab, and `first-objects` cannot set it. If GitLab gives up before the shim answers, raise it there.
+
+With GitLab outside the cluster, for example behind an ingress, leave `prAgent.webhookProjects` empty and make the webhook by hand:
+
+1. In the project, open Settings, then Webhooks.
+2. Set the URL to the address of the shim, with the path `/webhook`.
+3. Set the secret token to the value of `WEBHOOK_SECRET`.
+4. Select the triggers Merge request events and Comments only.
+5. If the URL is https with a certificate that GitLab trusts, keep SSL verification on.
 
 ### Renew the token
 

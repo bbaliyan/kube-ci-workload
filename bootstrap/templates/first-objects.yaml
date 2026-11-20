@@ -15,6 +15,11 @@ spec:
       valuesObject:
         {{- $values := dict "nodeSelector" .Values.firstObjects.nodeSelector -}}
         {{- if .Values.prAgent.enabled }}{{- $_ := set $values "prAgentNamespace" .Values.prAgent.namespace -}}{{- end }}
+        {{- if and .Values.prAgent.enabled .Values.prAgent.webhookProjects }}
+        {{- if not .Values.prAgent.webhook }}{{ fail "prAgent.webhookProjects needs prAgent.webhook, because the webhook points at the shim" }}{{ end }}
+        {{- $_ := set $values "prAgentWebhookUrl" (printf "http://pr-agent-webhook.%s.svc.cluster.local:%v/webhook" .Values.prAgent.namespace (.Values.prAgent.webhook.port | default 8080)) -}}
+        {{- $_ := set $values "prAgentWebhookProjects" .Values.prAgent.webhookProjects -}}
+        {{- end }}
         {{- mergeOverwrite $values .Values.firstObjects.helmValues | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc

@@ -17,5 +17,10 @@ mirrorGroup: mirror
 # namespace and no Role.
 prAgentNamespace: ""
 
+# The shim webhook of pr-agent. With a URL, the Job allows webhooks to local addresses (an instance-wide setting)
+# and makes a project webhook on each project path of the list, for example mirror/kube-compute. Empty makes none.
+prAgentWebhookUrl: ""
+prAgentWebhookProjects: []
+
 nodeSelector: {}
 tolerations: []

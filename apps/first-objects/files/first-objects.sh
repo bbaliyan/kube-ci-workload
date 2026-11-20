@@ -9,6 +9,8 @@
 #   gitlab-runner  (namespace $RUNNER_NAMESPACE)  keys runner-token, runner-registration-token
 #   gitlab-pr-agent (namespace $PR_AGENT_NAMESPACE) keys token, WEBHOOK_SECRET: a Developer group token that
 #                  reads merge requests, posts review comments and edits the MR description, and a random secret for the GitLab webhook. Only if PR_AGENT_NAMESPACE is set.
+#   A project webhook for the pr-agent shim on each project of PR_AGENT_WEBHOOK_PROJECTS: merge request
+#                  and comment events only, with WEBHOOK_SECRET as its secret token. Only if PR_AGENT_WEBHOOK_URL is set.
 #
 # A new GitLab has no group, no runner and no known root password, and the GitLab API
 # cannot create the first token. The one thing that can is GitLab's own `gitlab-rails runner`,
@@ -19,6 +21,10 @@
 #   GITLAB_API        required. The address of the GitLab API, for example http://gitlab.gitlab.svc.
 #   MIRROR_GROUP      optional. Default mirror.
 #   PR_AGENT_NAMESPACE optional. The namespace for the pr-agent Secret. Empty makes no pr-agent token.
+#   PR_AGENT_WEBHOOK_URL optional. The address of the shim, for example http://pr-agent-webhook.pr-agent.svc.cluster.local:8080/webhook.
+#                     It needs PR_AGENT_NAMESPACE. Empty makes no webhook and changes no instance setting.
+#   PR_AGENT_WEBHOOK_PROJECTS optional. Project paths that get the webhook, separated by spaces, for example mirror/kube-compute.
+#                     A project that does not exist yet is skipped with a warning.
 #   GITLAB_EXEC       optional. The command that runs a program inside the GitLab container.
 #                     Default: kubectl -n $GITLAB_NAMESPACE exec $GITLAB_POD --
 #   GITLAB_READY_TIMEOUT optional. Default 30m.
@@ -34,6 +40,15 @@ group="${MIRROR_GROUP:-mirror}"
 [[ "$group" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "bad MIRROR_GROUP: $group"
 pr_agent_namespace="${PR_AGENT_NAMESPACE:-}"
 [[ -z "$pr_agent_namespace" || "$pr_agent_namespace" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || fail "bad PR_AGENT_NAMESPACE: $pr_agent_namespace"
+webhook_url="${PR_AGENT_WEBHOOK_URL:-}"
+webhook_projects="${PR_AGENT_WEBHOOK_PROJECTS:-}"
+if [ -n "$webhook_url" ]; then
+  [ -n "$pr_agent_namespace" ] || fail "PR_AGENT_WEBHOOK_URL needs PR_AGENT_NAMESPACE, which holds the webhook secret"
+  [[ "$webhook_url" =~ ^https?://[^/@[:space:]]+(/[^[:space:]]*)?$ ]] || fail "PR_AGENT_WEBHOOK_URL must be http(s)://host[/path] with no user or token: $webhook_url"
+  for project in $webhook_projects; do
+    [[ "$project" =~ ^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$ ]] || fail "bad project path in PR_AGENT_WEBHOOK_PROJECTS: $project"
+  done
+fi
 [[ "$GITLAB_API" =~ ^https?://[^/@]+$ ]] || fail "GITLAB_API must be http(s)://host with no path, user or token"
 case "$-" in *x*) fail "shell tracing is on. Stopping before this script prints a token." ;; esac
 
@@ -76,10 +91,10 @@ admin_token="$(jq -er .token <<<"$bootstrap")" || fail "gitlab-rails runner gave
 root_password="$(jq -r '.password // empty' <<<"$bootstrap")"
 unset bootstrap
 
-api() { # method, path, curl arguments...: the token reaches curl through stdin
+api() { # method, path, curl arguments...: the token reaches curl through stdin, with $api_config if set
   local method="$1" path="$2"
   shift 2
-  printf 'header = "PRIVATE-TOKEN: %s"\n' "$admin_token" |
+  { printf 'header = "PRIVATE-TOKEN: %s"\n' "$admin_token"; [ -z "${api_config:-}" ] || printf '%s\n' "$api_config"; } |
     curl --silent --show-error --fail-with-body --max-time 60 --config - --request "$method" "$GITLAB_API/api/v4$path" "$@"
 }
 trap 'api DELETE /personal_access_tokens/self >/dev/null 2>&1 || true' EXIT
@@ -159,6 +174,52 @@ if [ -n "$pr_agent_namespace" ] && ! have_secret "$pr_agent_namespace" gitlab-pr
   put_secret "$pr_agent_namespace" gitlab-pr-agent "token=$pr_agent_token" "WEBHOOK_SECRET=$webhook_secret"
   unset pr_agent_token webhook_secret
   echo "first-objects: saved Secret gitlab-pr-agent"
+fi
+
+# The shim runs in the cluster, and GitLab refuses a webhook to a local address unless an administrator
+# allows it. The setting is instance-wide, so it is set only when this script creates a webhook.
+#
+# A project hook has no timeout field in the API. The sender's limit is the instance setting
+# gitlab_rails['webhook_timeout'] in gitlab.rb, which this script cannot change.
+#
+# The API never returns the secret token of a hook, so a run cannot tell if it changed (for example after
+# the Secret was renewed). Every run therefore writes the full settings of an existing hook. The secret
+# token goes to curl through stdin, like the admin token.
+if [ -n "$webhook_url" ]; then
+  api PUT /application/settings --data-urlencode allow_local_requests_from_web_hooks_and_services=true >/dev/null || fail "cannot allow webhooks to local addresses"
+  webhook_secret="$(kubectl -n "$pr_agent_namespace" get secret gitlab-pr-agent -o jsonpath='{.data.WEBHOOK_SECRET}' | base64 -d)" || fail "cannot read WEBHOOK_SECRET of the Secret gitlab-pr-agent"
+  [ -n "$webhook_secret" ] || fail "the Secret gitlab-pr-agent has no WEBHOOK_SECRET"
+  hook_fields=(--data-urlencode "url=$webhook_url" --data-urlencode enable_ssl_verification=true
+    --data-urlencode merge_requests_events=true --data-urlencode note_events=true)
+  for event in push_events tag_push_events issues_events confidential_issues_events confidential_note_events \
+    job_events pipeline_events wiki_page_events deployment_events releases_events; do
+    hook_fields+=(--data-urlencode "$event=false")
+  done
+  for project in $webhook_projects; do
+    project_id="$(api GET "/projects/${project//\//%2F}" 2>/dev/null | jq -r .id || true)"
+    if [ -z "$project_id" ] || [ "$project_id" = null ]; then
+      echo "first-objects: project $project does not exist yet, so it has no webhook. Run this script again after the mirror sync."
+      continue
+    fi
+    hook_ids=""
+    page=1
+    while :; do
+      hooks="$(api GET "/projects/$project_id/hooks?per_page=100&page=$page")" || fail "cannot list the webhooks of $project"
+      hook_ids+="$(jq -r --arg url "$webhook_url" '.[] | select(.url == $url) | .id' <<<"$hooks")"$'\n'
+      [ "$(jq length <<<"$hooks")" -ge 100 ] || break
+      page=$((page + 1))
+    done
+    if [ -z "${hook_ids//$'\n'/}" ]; then
+      api_config="data-urlencode = \"token=$webhook_secret\"" api POST "/projects/$project_id/hooks" "${hook_fields[@]}" >/dev/null || fail "cannot create the webhook of $project"
+      echo "first-objects: created the webhook of $project"
+    else
+      for hook_id in $hook_ids; do
+        api_config="data-urlencode = \"token=$webhook_secret\"" api PUT "/projects/$project_id/hooks/$hook_id" "${hook_fields[@]}" >/dev/null || fail "cannot update the webhook of $project"
+        echo "first-objects: set the webhook $hook_id of $project"
+      done
+    fi
+  done
+  unset webhook_secret
 fi
 
 if ! have_secret "$RUNNER_NAMESPACE" gitlab-runner; then
