@@ -134,6 +134,11 @@ prAgent:
   contextLength: 16000
   # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
+  # More GitLab addresses that the actor may call, with the same token. GitLab builds the links to the next page of
+  # a long list from its external URL, and python-gitlab follows them. pr-agent has no setting to keep the base URL.
+  # If a review of a large merge request fails on a page link, add the external URL here. An https address needs
+  # egressTrustBundle.
+  gitlabExtraUrls: []
   # The webhook shim checks the real webhook secret and sends this fixed value in X-Gitlab-Token. The actor
   # expects the same value in GITLAB__SHARED_SECRET. It is public and is not the webhook secret.
   hopToken: internal-hop-from-the-webhook-shim
