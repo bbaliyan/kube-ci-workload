@@ -18,7 +18,7 @@
 
 {{- /* The pr-agent setting that holds the base URL of the model server, and the one that holds its key, by the prefix of the model name. */ -}}
 {{- define "prAgent.providerSettings" -}}
-{{- $providers := dict "ollama" (dict "base" "OLLAMA__API_BASE") "openai" (dict "base" "OPENAI__API_BASE" "key" "OPENAI__KEY") -}}
+{{- $providers := dict "ollama" (dict "base" "OLLAMA__API_BASE" "key" "OLLAMA__API_KEY") "openai" (dict "base" "OPENAI__API_BASE" "key" "OPENAI__KEY") -}}
 {{- $prefix := index (splitList "/" .) 0 -}}
 {{- if not (hasKey $providers $prefix) }}{{ fail (printf "prAgent.model must start with one of: %s. Got %q" (keys $providers | sortAlpha | join "/, " | printf "%s/") .) }}{{ end -}}
 {{- toJson (get $providers $prefix) -}}
@@ -45,14 +45,23 @@
   "GITLAB__URL" $p.gitlabUrl
   "GITLAB__AUTH_TYPE" "oauth_token"
   "GITLAB__PERSONAL_ACCESS_TOKEN" "replaced-by-the-egress-proxy"
-  "GITLAB__SHARED_SECRET" $p.sharedSecret -}}
+  "GITLAB__SHARED_SECRET" $p.hopToken -}}
 {{- $_ := set $env $provider.base $p.modelEndpoint -}}
+{{- /* The egress gateway ends TLS and starts it again, so the actor must trust the gateway CA for every https rule. */ -}}
+{{- $https := or (eq $gitlab.protocol "https") (eq $model.protocol "https") -}}
+{{- if and $https (not $p.egressTrustBundle) }}{{ fail "prAgent uses an https address (prAgent.gitlabUrl or prAgent.modelEndpoint), so the actor must trust the egress gateway CA. The pinned substrate-actor chart cannot mount that trust bundle yet. Use an http address, or pin a substrate.revision whose chart accepts egressTrustBundle and set prAgent.egressTrustBundle to true." }}{{ end -}}
+{{- if $https }}
+{{- $bundle := "/run/ate/egress-trust-bundle/trust-bundle.pem" -}}
+{{- $_ := set $env "SSL_CERT_FILE" $bundle -}}
+{{- $_ := set $env "REQUESTS_CA_BUNDLE" $bundle -}}
+{{- $_ := set $env "GITLAB__SSL_VERIFY" $bundle -}}
+{{- end -}}
 {{- if $p.modelApiKeySecret }}
 {{- $_ := set $modelRule "credential" (dict
   "header" "Authorization"
   "prefix" "Bearer "
   "credentialUri" (printf "ate-secret://k8s.io/default/%s/%s/%s" $p.namespace $p.modelApiKeySecret.name $p.modelApiKeySecret.key)) -}}
-{{- if $provider.key }}{{ $_ := set $env $provider.key "replaced-by-the-egress-proxy" }}{{ end -}}
+{{- $_ := set $env $provider.key "replaced-by-the-egress-proxy" -}}
 {{- end -}}
 {{- $actor := dict
   "name" "pr-agent"
@@ -71,8 +80,10 @@
         "prefix" "Bearer "
         "credentialUri" (printf "ate-secret://k8s.io/default/%s/gitlab-pr-agent/token" $p.namespace)))
     $modelRule) -}}
+{{- if $https }}{{ $_ := set $actor "egressTrustBundle" true }}{{ end -}}
+{{- /* The webhook shim checks the real secret and sends the hop token, which is the secret that the actor expects. */ -}}
 {{- if $p.webhook }}
-{{- $_ := set $actor "webhook" (mergeOverwrite (dict "secret" (dict "name" "gitlab-pr-agent")) $p.webhook) -}}
+{{- $_ := set $actor "webhook" (mergeOverwrite (dict "secret" (dict "name" "gitlab-pr-agent" "key" "WEBHOOK_SECRET") "hopToken" $p.hopToken) $p.webhook) -}}
 {{- end -}}
 {{- toJson (list $actor) -}}
 {{- end -}}
