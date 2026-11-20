@@ -228,6 +228,24 @@ is "a webhook setting gives the actor a shim that reads the key WEBHOOK_SECRET o
 grep -q 'GITLAB__SHARED_SECRET: custom-hop-token' <<<"$out" && grep -q 'hopToken: custom-hop-token' <<<"$out"
 is "the shim sends the hop token that the actor expects as its shared secret, from one value" "$?" "$out"
 
+webhook_args=("${pr_agent[@]}" --set 'prAgent.webhookProjects={mirror/example-repo,mirror/other}' --set prAgent.webhook.port=8080)
+! grep -q 'prAgentWebhook' <<<"$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/first-objects.yaml)"
+is "by default first-objects makes no webhook" "$?"
+out="$(helm template b "$repo/bootstrap" "${webhook_args[@]}" --set prAgent.webhook.port=9000 --show-only templates/first-objects.yaml)"
+grep -q 'prAgentWebhookUrl: http://pr-agent-webhook.pr-agent.svc.cluster.local:9000/webhook' <<<"$out" && grep -q 'mirror/example-repo' <<<"$out" && grep -q 'mirror/other' <<<"$out"
+is "a webhook project list points first-objects at the shim Service on its port" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.webhookProjects={mirror/example-repo}' --set prAgent.webhook.allowFrom=null --show-only templates/first-objects.yaml)"
+grep -q 'cluster.local:8080/webhook' <<<"$out"
+is "the shim port is 8080 when the setting does not name one" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set 'prAgent.webhookProjects={mirror/example-repo}' 2>&1)"
+grep -q 'prAgent.webhookProjects needs prAgent.webhook' <<<"$out"
+is "a webhook project list without a shim fails the render" "$?" "$out"
+out="$(helm template first-objects "$repo/apps/first-objects" --set prAgentNamespace=pr-agent --set prAgentWebhookUrl=http://shim.example.test/webhook --set 'prAgentWebhookProjects={a/b,c/d}' --show-only templates/job.yaml)"
+grep -q 'PR_AGENT_WEBHOOK_PROJECTS' <<<"$out" && grep -q 'value: "a/b c/d"' <<<"$out"
+is "the Job passes the webhook address and the project paths" "$?" "$out"
+! grep -q 'PR_AGENT_WEBHOOK' <<<"$(helm template first-objects "$repo/apps/first-objects" --show-only templates/job.yaml)"
+is "by default the Job has no webhook variable" "$?"
+
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-registration.yaml)"
 grep -q 'path: charts/substrate-registration' <<<"$out" && grep -q 'name: substrate-registration$' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out" \
   && grep -Eq 'digest: sha256:[0-9a-f]{64}' <<<"$out" && grep -q 'name: pr-agent' <<<"$out"

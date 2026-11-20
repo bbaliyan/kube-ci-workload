@@ -40,6 +40,12 @@ spec:
               value: {{ .Values.mirrorGroup | quote }}
             - name: PR_AGENT_NAMESPACE
               value: {{ .Values.prAgentNamespace | quote }}
+            {{- if .Values.prAgentWebhookUrl }}
+            - name: PR_AGENT_WEBHOOK_URL
+              value: {{ .Values.prAgentWebhookUrl | quote }}
+            - name: PR_AGENT_WEBHOOK_PROJECTS
+              value: {{ join " " .Values.prAgentWebhookProjects | quote }}
+            {{- end }}
           resources:
             requests:
               cpu: 50m

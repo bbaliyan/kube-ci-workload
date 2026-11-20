@@ -152,6 +152,10 @@ prAgent:
   # Secret gitlab-pr-agent and sends hopToken to the actor. It needs a chart revision that has the shim.
   # Empty means no shim, and GitLab cannot reach the actor. Set the keys of `webhook`, for example ingress and allowFrom.
   webhook: {}
+  # Project paths that get a GitLab webhook to the shim, for example [mirror/kube-compute]. first-objects makes the
+  # webhook (merge request and comment events) and allows webhooks to local addresses in GitLab, an instance-wide
+  # setting. Empty makes no webhook: do it by hand, as the README says. It needs `webhook`. Each project must exist.
+  webhookProjects: []
   # Extra values for the actor chart, which the registration chart does not read.
   actorHelmValues: {}
   registration:

@@ -29,6 +29,9 @@ cat >"$stubs/kubectl" <<'STUB'
 #!/usr/bin/env bash
 echo "kubectl $*" >>"$STATE/kubectl.log"
 case "$*" in
+  *"get secret gitlab-pr-agent -o jsonpath="*)
+    printf '%s' "$(printf '%s' HOOKSECRET901 | base64)"
+    ;;
   *"get secret "*)
     name="${*: -1}"
     if [ "${KUBECTL_ERROR_FOR:-}" = "$name" ]; then
@@ -76,6 +79,10 @@ echo "curl $*" >>"$STATE/curl.log"
 case "$*" in
   *"--request GET"*"/groups/mirror"*)
     if [ -n "${GROUP_EXISTS:-}" ]; then echo '{"id":7}'; else echo '{"message":"404 Group Not Found"}' >&2; exit 22; fi ;;
+  *"--request GET"*"/projects/mirror%2Fexample-repo"*) if [ -n "${PROJECT_EXISTS:-}" ]; then echo '{"id":42}'; else echo '{"message":"404 Project Not Found"}' >&2; exit 22; fi ;;
+  *"--request GET"*"/projects/42/hooks"*) echo "${HOOKS:-[]}" ;;
+  *"--request POST"*"/projects/42/hooks"*) echo '{"id":11}' ;;
+  *"--request PUT"*"/projects/42/hooks/"*) echo '{"id":9}' ;;
   *"--request GET"*"/groups/7/access_tokens"*"page=2"*) echo "${ORPHANS_PAGE2:-[]}" ;;
   *"--request GET"*"/groups/7/access_tokens"*) echo "${ORPHANS:-[]}" ;;
   *"--request POST"*"/groups/7/access_tokens"*"name=pipeline-exporter"*) echo '{"token":"EXPORTERTOKEN345"}' ;;
@@ -161,6 +168,59 @@ is "an unsaved pr-agent token on the second page of the token list is revoked, a
 SECRETS="" run pr-agent-bad PR_AGENT_NAMESPACE='Bad_NS'
 [ "$code" -ne 0 ] && [ ! -e "$case_dir/rails.log" ]
 is "a bad pr-agent namespace is refused" "$?" "exit $code: $out"
+
+# ---- the pr-agent webhook ---------------------------------------------------------------------
+hook_url=http://pr-agent-webhook.pr-agent.svc.cluster.local:8080/webhook
+hook_env=(PR_AGENT_NAMESPACE=pr-agent PR_AGENT_WEBHOOK_URL="$hook_url" PR_AGENT_WEBHOOK_PROJECTS="mirror/example-repo" GROUP_EXISTS=1 PROJECT_EXISTS=1)
+all_secrets="gitlab-root gitlab-mirror gitlab-exporter gitlab-runner gitlab-pr-agent"
+hook_requests() { grep -- "--request $1 .*/projects/42/hooks$2" "$case_dir/curl.log"; }
+
+SECRETS="$all_secrets" run hook-create "${hook_env[@]}"
+[ "$code" -eq 0 ] && [ "$(hook_requests POST '' | wc -l)" -eq 1 ] && grep -q 'created the webhook of mirror/example-repo' <<<"$out"
+is "a project without the webhook gets one" "$?" "exit $code: $out"
+post="$(hook_requests POST '')"
+grep -q "url=$hook_url" <<<"$post" && grep -q 'merge_requests_events=true' <<<"$post" && grep -q 'note_events=true' <<<"$post" && grep -q 'push_events=false' <<<"$post" && grep -q 'tag_push_events=false' <<<"$post" && grep -q 'enable_ssl_verification=true' <<<"$post"
+is "the hook sends merge request and comment events and no push event" "$?" "$post"
+grep -q 'data-urlencode = "token=HOOKSECRET901"' "$case_dir/curl.stdin" && ! grep -q 'HOOKSECRET901' "$case_dir/curl.log" && ! grep -q 'HOOKSECRET901' <<<"$out"
+is "the secret token comes from the Secret and reaches curl through stdin, not a command line or the output" "$?" "$(cat "$case_dir/curl.log")"
+grep -q -- '--request PUT .*/application/settings .*allow_local_requests_from_web_hooks_and_services=true' "$case_dir/curl.log"
+is "webhooks to local addresses are allowed in the instance settings" "$?" "$(cat "$case_dir/curl.log")"
+grep -q 'get secret gitlab-pr-agent -o jsonpath' "$case_dir/kubectl.log" && [ ! -e "$case_dir/applied" ]
+is "the webhook secret is read and the Secret is not made again" "$?" "$(cat "$case_dir/kubectl.log")"
+
+SECRETS="$all_secrets" run hook-again "${hook_env[@]}" \
+  HOOKS="[{\"id\":9,\"url\":\"$hook_url\",\"merge_requests_events\":true,\"note_events\":true,\"push_events\":false}]"
+[ "$code" -eq 0 ] && ! hook_requests POST '' >/dev/null && [ "$(hook_requests PUT /9 | wc -l)" -eq 1 ] && ! grep -q 'created the webhook' <<<"$out"
+is "a second run makes no second webhook and writes the one that exists" "$?" "exit $code: $out"
+
+SECRETS="$all_secrets" run hook-wrong "${hook_env[@]}" \
+  HOOKS="[{\"id\":9,\"url\":\"$hook_url\",\"merge_requests_events\":false,\"note_events\":false,\"push_events\":true}]"
+put="$(hook_requests PUT /9)"
+[ "$code" -eq 0 ] && grep -q 'merge_requests_events=true' <<<"$put" && grep -q 'note_events=true' <<<"$put" && grep -q 'push_events=false' <<<"$put" && grep -q 'data-urlencode = "token=HOOKSECRET901"' "$case_dir/curl.stdin"
+is "a webhook with the wrong events is set right, with the token again" "$?" "exit $code: $put"
+
+SECRETS="$all_secrets" run hook-other "${hook_env[@]}" \
+  HOOKS='[{"id":5,"url":"http://other.example.invalid/hook"}]'
+[ "$code" -eq 0 ] && [ "$(hook_requests POST '' | wc -l)" -eq 1 ] && ! hook_requests PUT /5 >/dev/null
+is "a webhook of another address is left alone" "$?" "exit $code: $out"
+
+SECRETS="$all_secrets" run hook-no-project "${hook_env[@]}" PROJECT_EXISTS=
+[ "$code" -eq 0 ] && grep -q 'project mirror/example-repo does not exist yet' <<<"$out" && ! grep -q -- '/projects/42/hooks' "$case_dir/curl.log"
+is "a project that does not exist yet is skipped with a warning" "$?" "exit $code: $out"
+
+SECRETS="$all_secrets" run hook-off PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1
+[ "$code" -eq 0 ] && ! grep -q '/hooks' "$case_dir/curl.log" && ! grep -q 'allow_local_requests' "$case_dir/curl.log" && ! grep -q 'jsonpath' "$case_dir/kubectl.log"
+is "with no webhook address it makes no webhook and leaves the instance setting alone" "$?" "exit $code: $out"
+
+SECRETS="" run hook-no-namespace PR_AGENT_WEBHOOK_URL="$hook_url"
+[ "$code" -ne 0 ] && [ ! -e "$case_dir/rails.log" ]
+is "a webhook address without the pr-agent namespace is refused" "$?" "exit $code: $out"
+SECRETS="" run hook-bad-url PR_AGENT_NAMESPACE=pr-agent PR_AGENT_WEBHOOK_URL=http://user:pw@shim.example.invalid/webhook
+[ "$code" -ne 0 ] && [ ! -e "$case_dir/rails.log" ]
+is "a webhook address with a user part is refused" "$?" "exit $code: $out"
+SECRETS="" run hook-bad-project "${hook_env[@]}" PR_AGENT_WEBHOOK_PROJECTS='mirror/ok;rm'
+[ "$code" -ne 0 ] && [ ! -e "$case_dir/rails.log" ]
+is "a bad project path is refused" "$?" "exit $code: $out"
 
 # ---- run again -------------------------------------------------------------------------
 SECRETS="gitlab-root gitlab-mirror gitlab-exporter gitlab-runner" run again GROUP_EXISTS=1
