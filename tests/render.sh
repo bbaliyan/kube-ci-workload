@@ -115,7 +115,7 @@ is "the worker count is a value of this repo" "$?" "$out"
 is "RustFS alone installs no Substrate workers" "$?"
 
 # ---- pr-agent --------------------------------------------------------------------------
-pr_agent=(--set prAgent.enabled=true --set prAgent.ollamaUrl=http://ollama.example.test:11434)
+pr_agent=(--set prAgent.enabled=true --set prAgent.modelEndpoint=http://model.example.test:11434)
 for app in substrate-actors substrate-registration substrate-idle-suspend; do
   ! helm template b "$repo/bootstrap" | grep -q "name: $app\$"
   is "pr-agent is off by default: no $app Application" "$?"
@@ -127,9 +127,9 @@ helm template b "$repo/bootstrap" --show-only templates/substrate-prereqs.yaml |
 helm template b "$repo/bootstrap" --show-only templates/first-objects.yaml | grep -q prAgentNamespace \
   && report "by default first-objects makes no pr-agent token" "present" || report "by default first-objects makes no pr-agent token" ok
 out="$(helm template b "$repo/bootstrap" --set prAgent.enabled=true 2>&1)"
-grep -q 'prAgent.ollamaUrl' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+grep -q 'prAgent.modelEndpoint' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
 is "pr-agent without a model endpoint fails the render" "$?" "$out"
-out="$(helm template b "$repo/bootstrap" --set prAgent.enabled=true --set substrate.enabled=false --set prAgent.ollamaUrl=http://ollama.example.test:11434 2>&1)"
+out="$(helm template b "$repo/bootstrap" --set prAgent.enabled=true --set substrate.enabled=false --set prAgent.modelEndpoint=http://model.example.test:11434 2>&1)"
 grep -q 'needs substrate.enabled' <<<"$out"
 is "pr-agent without Substrate fails the render" "$?" "$out"
 
@@ -147,16 +147,33 @@ is "the actor chart installs from the pinned Substrate repo into the pr-agent na
 grep -Eq 'image: pragent/pr-agent:[0-9]+\.[0-9]+\.[0-9]+-gitlab_webhook@sha256:[0-9a-f]{64}$' <<<"$out" && ! grep -q ':latest' <<<"$out"
 is "the pr-agent image has a version tag and a digest, never latest" "$?" "$out"
 grep -q 'CONFIG__MODEL: ollama/qwen3-coder:30b' <<<"$out" && grep -q "CONFIG__FALLBACK_MODELS: '\[\]'" <<<"$out" && grep -q 'CONFIG__CUSTOM_MODEL_MAX_TOKENS: "16000"' <<<"$out" \
-  && grep -q 'CONFIG__DUPLICATE_PROMPT_EXAMPLES: "true"' <<<"$out" && grep -q 'OLLAMA__API_BASE: http://ollama.example.test:11434' <<<"$out"
-is "the model settings are the ones for a local Ollama model, and the endpoint is the value" "$?" "$out"
+  && grep -q 'CONFIG__DUPLICATE_PROMPT_EXAMPLES: "true"' <<<"$out" && grep -q 'OLLAMA__API_BASE: http://model.example.test:11434' <<<"$out"
+is "the model settings follow the model prefix, and the endpoint is the value" "$?" "$out"
 grep -q 'credentialUri: ate-secret://k8s.io/default/substrate-system/gitlab-pr-agent/token' <<<"$out" && grep -q 'header: Authorization' <<<"$out" \
   && grep -q 'GITLAB__AUTH_TYPE: oauth_token' <<<"$out" && ! grep -Eq 'glpat-|PERSONAL_ACCESS_TOKEN: [^r]' <<<"$out"
 is "the GitLab token is set by the egress proxy from the Secret, and no token is in the values" "$?" "$out"
-grep -A3 -- '- hostnames:' <<<"$out" | grep -q 'ollama.example.test' && grep -q -- '- 11434' <<<"$out"
+grep -A3 -- '- hostnames:' <<<"$out" | grep -q 'model.example.test' && grep -q -- '- 11434' <<<"$out"
 is "the egress policy allows the host and port of the model endpoint" "$?" "$out"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=ollama/other:7b --set prAgent.contextLength=32000 --show-only templates/substrate-actors.yaml)"
 grep -q 'CONFIG__MODEL: ollama/other:7b' <<<"$out" && grep -q 'CONFIG__CUSTOM_MODEL_MAX_TOKENS: "32000"' <<<"$out"
 is "the model and the context length are values" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=openai/example-model --set prAgent.modelEndpoint=https://llm.example.test/v1 --show-only templates/substrate-actors.yaml)"
+grep -q 'CONFIG__MODEL: openai/example-model' <<<"$out" && grep -q 'OPENAI__API_BASE: https://llm.example.test/v1' <<<"$out" && ! grep -q 'OLLAMA__API_BASE' <<<"$out" && ! grep -q 'OPENAI__KEY' <<<"$out"
+is "an openai model sets the OpenAI base URL and no Ollama setting, and no key when there is no key Secret" "$?" "$out"
+grep -B3 'protocol: https' <<<"$out" | grep -q 'llm.example.test' && grep -B3 'protocol: https' <<<"$out" | grep -q -- '- 443' && ! grep -q 'model-key' <<<"$out"
+is "an https endpoint gets an https egress rule on port 443 and no credential" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=openai/example-model --set prAgent.modelEndpoint=https://llm.example.test --set prAgent.modelApiKeySecret.name=model-key --set prAgent.modelApiKeySecret.key=api-key --show-only templates/substrate-actors.yaml)"
+grep -Eq 'credentialUri: ate-secret://k8s.io/default/[a-z-]+/model-key/api-key' <<<"$out" && grep -q 'OPENAI__KEY: replaced-by-the-egress-proxy' <<<"$out"
+is "a model key Secret is sent by the egress proxy and the actor holds a placeholder only" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelEndpoint=http://192.0.2.10:11434 2>&1)"
+grep -q 'DNS name, not an IP address' <<<"$out" && ! grep -q 'kind: Application' <<<"$out"
+is "a model endpoint that is an IP address fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.modelEndpoint=ftp://model.example.test 2>&1)"
+grep -q 'must start with http' <<<"$out"
+is "a model endpoint that is not http or https fails the render" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.model=other/model 2>&1)"
+grep -q 'must start with one of: ollama/, openai/' <<<"$out"
+is "a model with an unknown prefix fails the render" "$?" "$out"
 ! grep -q 'webhook:' <<<"$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
 is "with no shim image the actor has no webhook" "$?"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.webhook.port=8080 --set prAgent.webhook.image=example.test/shim@sha256:0000000000000000000000000000000000000000000000000000000000000000 --show-only templates/substrate-actors.yaml)"

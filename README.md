@@ -74,16 +74,22 @@ The actor never holds the GitLab token. Its egress policy lets only the GitLab h
 
 ### Enable it
 
-Warning: Ollama has no login. Make it reachable from the LAN only.
+The actor talks to a model server that runs outside the cluster. The consumer sets the model, the address of the server and, if the server has a login, the Secret that holds its key.
 
-1. On the model host, run `ollama pull qwen3-coder:30b`.
-2. On the model host, start Ollama with `OLLAMA_HOST=0.0.0.0` and `OLLAMA_CONTEXT_LENGTH=16000`.
-3. In the consumer values, set `prAgent.ollamaUrl` to the address of the Ollama server, for example `http://<host>:11434`.
-4. If you changed the context length of the server, set `prAgent.contextLength` to the same number.
+1. Set `prAgent.model` to a model name of pr-agent. The prefix must be `ollama/` or `openai/`. Use `openai/` for any server with an OpenAI-compatible API.
+2. Set `prAgent.modelEndpoint` to the base URL of the server. Use a DNS name, not an IP address, because the egress policy matches host names. If you do not set it, the render fails.
+3. If the server has a login, create a Secret in `prAgent.namespace` and set `prAgent.modelApiKeySecret` to its `name` and `key`. The egress proxy sends the key as a bearer token, so the actor never holds it.
+4. Set `prAgent.contextLength` to the context length of the server, in tokens. The two numbers must be equal.
 5. Set `prAgent.enabled` to `true` and sync the bootstrap.
 6. Verify that the Applications `substrate-actors` and `substrate-registration` are Healthy.
 
-If `prAgent.ollamaUrl` is empty, the render fails. This is on purpose.
+Example for Ollama on a laptop:
+
+1. On the model host, run `ollama pull qwen3-coder:30b`.
+2. On the model host, start Ollama with `OLLAMA_HOST=0.0.0.0` and `OLLAMA_CONTEXT_LENGTH=16000`.
+3. Set `prAgent.modelEndpoint` to `http://<host name>:11434`.
+
+Warning: Ollama has no login. Make it reachable from the LAN only.
 
 The model and the endpoint are values, so no model name or address is in this repo. A model that runs on a laptop is good enough to test the wiring. It may not give good reviews.
 
