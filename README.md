@@ -117,7 +117,7 @@ The group token has the Developer role and the `api` scope. The command `/descri
 
 ### Long lists
 
-GitLab builds the links to the next page of a long list (an MR with more than 20 notes or diffs) from its external URL. python-gitlab follows those links, and pr-agent 0.50.0 has no setting to keep the base URL. The egress policy allows only `prAgent.gitlabUrl`, so such a call can be blocked. If a review of a large MR fails, add the external URL of GitLab to `prAgent.gitlabExtraUrls`. The egress proxy then sets the token for that host too.
+GitLab builds the links to the next page of a long list (an MR with more than 100 notes, diffs or discussions, the page size of pr-agent 0.50.0) from its external URL. python-gitlab follows those links, and pr-agent 0.50.0 has no setting to keep the base URL. The egress policy allows only `prAgent.gitlabUrl`, so such a call can be blocked. If a review of a large MR fails, add the external URL of GitLab to `prAgent.gitlabExtraUrls`. The egress proxy then sets the token for that host too.
 
 ## Upgrade GitLab
 

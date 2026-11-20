@@ -6,13 +6,12 @@
 {{- toJson (dict "protocol" $url.scheme "host" $url.hostname "port" ($port | atoi)) -}}
 {{- end -}}
 
-{{- /* The model endpoint, checked: http or https, and a DNS name, because the egress policy matches host names. */ -}}
-{{- define "prAgent.modelEndpoint" -}}
-{{- $address := . -}}
-{{- if not $address }}{{ fail "prAgent.enabled needs prAgent.modelEndpoint, the base URL of the model server, for example http://model.example.test:11434" }}{{ end -}}
+{{- /* An address, checked: http or https, and a DNS name, because the egress policy matches host names. It takes the address and the name of its value. */ -}}
+{{- define "prAgent.checkedAddress" -}}
+{{- $address := .address -}}
 {{- $endpoint := include "prAgent.endpoint" $address | fromJson -}}
-{{- if not (has $endpoint.protocol (list "http" "https")) }}{{ fail (printf "prAgent.modelEndpoint must start with http:// or https://, got %q" $address) }}{{ end -}}
-{{- if or (regexMatch `^[0-9]{1,3}(\.[0-9]{1,3}){3}$` $endpoint.host) (contains ":" $endpoint.host) }}{{ fail (printf "prAgent.modelEndpoint must use a DNS name, not an IP address, because the egress policy matches host names. Got %q" $address) }}{{ end -}}
+{{- if not (has $endpoint.protocol (list "http" "https")) }}{{ fail (printf "%s must start with http:// or https://, got %q" .name $address) }}{{ end -}}
+{{- if or (regexMatch `^[0-9]{1,3}(\.[0-9]{1,3}){3}$` $endpoint.host) (contains ":" $endpoint.host) }}{{ fail (printf "%s must use a DNS name, not an IP address, because the egress policy matches host names. Got %q" .name $address) }}{{ end -}}
 {{- toJson $endpoint -}}
 {{- end -}}
 
@@ -28,12 +27,18 @@
 {{- define "prAgent.actors" -}}
 {{- $p := .Values.prAgent -}}
 {{- if not .Values.substrate.enabled }}{{ fail "prAgent.enabled needs substrate.enabled" }}{{ end -}}
-{{- $model := include "prAgent.modelEndpoint" $p.modelEndpoint | fromJson -}}
+{{- if not $p.modelEndpoint }}{{ fail "prAgent.enabled needs prAgent.modelEndpoint, the base URL of the model server, for example http://model.example.test:11434" }}{{ end -}}
+{{- $model := include "prAgent.checkedAddress" (dict "address" $p.modelEndpoint "name" "prAgent.modelEndpoint") | fromJson -}}
 {{- $provider := include "prAgent.providerSettings" $p.model | fromJson -}}
 {{- $gitlabRules := list -}}
 {{- $gitlabHttps := false -}}
-{{- range concat (list $p.gitlabUrl) $p.gitlabExtraUrls }}
-{{- $address := include "prAgent.endpoint" . | fromJson -}}
+{{- $gitlabHosts := list -}}
+{{- range $index, $url := concat (list $p.gitlabUrl) (default (list) $p.gitlabExtraUrls) }}
+{{- $name := ternary "prAgent.gitlabUrl" "prAgent.gitlabExtraUrls" (eq $index 0) -}}
+{{- $address := include "prAgent.checkedAddress" (dict "address" $url "name" $name) | fromJson -}}
+{{- if has $address.host $gitlabHosts }}{{ fail (printf "%s repeats the GitLab host %q, which is already in prAgent.gitlabUrl or prAgent.gitlabExtraUrls" $name $address.host) }}{{ end -}}
+{{- if eq $address.host $model.host }}{{ fail (printf "%s has the same host as prAgent.modelEndpoint, %q. One host cannot send two different credentials" $name $address.host) }}{{ end -}}
+{{- $gitlabHosts = append $gitlabHosts $address.host -}}
 {{- if eq $address.protocol "https" }}{{ $gitlabHttps = true }}{{ end -}}
 {{- $gitlabRules = append $gitlabRules (dict
   "protocol" $address.protocol
@@ -62,7 +67,7 @@
 {{- $_ := set $env $provider.base $p.modelEndpoint -}}
 {{- /* The egress gateway ends TLS and starts it again, so the actor must trust the gateway CA for every https rule. */ -}}
 {{- $https := or (eq $model.protocol "https") $gitlabHttps -}}
-{{- if and $https (not $p.egressTrustBundle) }}{{ fail "prAgent uses an https address (prAgent.gitlabUrl or prAgent.modelEndpoint), so the actor must trust the egress gateway CA. The pinned substrate-actor chart cannot mount that trust bundle yet. Use an http address, or pin a substrate.revision whose chart accepts egressTrustBundle and set prAgent.egressTrustBundle to true." }}{{ end -}}
+{{- if and $https (not $p.egressTrustBundle) }}{{ fail "prAgent uses an https address (prAgent.gitlabUrl, prAgent.gitlabExtraUrls or prAgent.modelEndpoint), so the actor must trust the egress gateway CA. The pinned substrate-actor chart cannot mount that trust bundle yet. Use an http address, or pin a substrate.revision whose chart accepts egressTrustBundle and set prAgent.egressTrustBundle to true." }}{{ end -}}
 {{- if $https }}
 {{- $bundle := "/run/ate/egress-trust-bundle/trust-bundle.pem" -}}
 {{- $_ := set $env "SSL_CERT_FILE" $bundle -}}
