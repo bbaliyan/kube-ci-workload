@@ -84,9 +84,9 @@ substrate:
   enabled: true
   # The charts and the install image come from kube-agent-substrate. Pin a commit.
   repoURL: https://github.com/bbaliyan/kube-agent-substrate
-  revision: 0d7451ca840f10e5ac5432b7abcc00cb3d88ef86
-  # The digest of the install image published for that commit (substrate-install:main-0d7451c).
-  installImageDigest: sha256:a94e4d36f29aa2ef40405792a736b52227722272863a8e769b5e36802451de96
+  revision: 408ab73fa48c0fca50bb837cd436c60483e3d13b
+  # The digest of the install image published for that commit (substrate-install:main-408ab73).
+  installImageDigest: sha256:e9ef933bd04e5e7f2d01911ba7257ca8a97117ba32b41b2261f3fbaabc88c30c
   namespace: ate-system
   bucket: substrate-snapshots
   s3Endpoint: http://rustfs.rustfs.svc:9000
@@ -157,9 +157,9 @@ prAgent:
   registration:
     # The registration image: kubectl-ate, jq, curl and bash. The chart schema accepts only a release number
     # as the tag, and the digest decides what the node pulls. The digest is the image of the commit
-    # that substrate.revision pins (substrate-registration:main-0d7451c).
+    # that substrate.revision pins (substrate-registration:main-408ab73).
     version: v1.0.0
-    digest: sha256:96c918df2e163ee03f42d96a0f22b7780080416a17583ba481088d0db82f2340
+    digest: sha256:e3a3177940ca2d21972e370ed79860cc1d37a93458ec34e961b5c6c20854b818
     helmValues: {}
   # Suspends the actor when it is idle. Off by default: it needs a Prometheus that scrapes the control plane,
   # and a cluster admin must grant its service account the editor role in the atespace (README, "pr-agent").
