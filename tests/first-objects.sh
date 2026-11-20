@@ -31,8 +31,13 @@ echo "kubectl $*" >>"$STATE/kubectl.log"
 case "$*" in
   *"get secret "*)
     name="${*: -1}"
-    grep -qx "$name" "$STATE/secrets" 2>/dev/null
-    exit $?
+    if [ "${KUBECTL_ERROR_FOR:-}" = "$name" ]; then
+      echo 'Error from server (Forbidden): secrets is forbidden' >&2
+      exit 1
+    fi
+    grep -qx "$name" "$STATE/secrets" 2>/dev/null && exit 0
+    echo "Error from server (NotFound): secrets \"$name\" not found" >&2
+    exit 1
     ;;
   *"create secret generic "*)
     # Record "name key key ..." in a pending file that the next apply moves into place.
@@ -71,6 +76,7 @@ echo "curl $*" >>"$STATE/curl.log"
 case "$*" in
   *"--request GET"*"/groups/mirror"*)
     if [ -n "${GROUP_EXISTS:-}" ]; then echo '{"id":7}'; else echo '{"message":"404 Group Not Found"}' >&2; exit 22; fi ;;
+  *"--request GET"*"/groups/7/access_tokens"*"page=2"*) echo "${ORPHANS_PAGE2:-[]}" ;;
   *"--request GET"*"/groups/7/access_tokens"*) echo "${ORPHANS:-[]}" ;;
   *"--request POST"*"/groups/7/access_tokens"*"name=pipeline-exporter"*) echo '{"token":"EXPORTERTOKEN345"}' ;;
   *"--request POST"*"/groups/7/access_tokens"*"name=pr-agent"*) echo '{"token":"PRAGENTTOKEN678"}' ;;
@@ -132,8 +138,8 @@ SECRETS="" run pr-agent PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1
 is "a pr-agent namespace makes the Secret with a token and a webhook secret" "$?" "exit $code: $out $(cat "$case_dir/applied")"
 grep -q -- '-n pr-agent create secret generic gitlab-pr-agent --from-literal=token=PRAGENTTOKEN678 --from-literal=WEBHOOK_SECRET=[0-9a-f]\{64\}' "$case_dir/kubectl.log"
 is "the Secret is in the pr-agent namespace, holds the pr-agent token and a 64-character random secret" "$?" "$(cat "$case_dir/kubectl.log")"
-grep -q 'name=pr-agent' "$case_dir/curl.log" && grep -A3 'name=pr-agent' "$case_dir/curl.log" | grep -q 'access_level=20' && grep 'name=pr-agent' "$case_dir/curl.log" | grep -q 'scopes\[\]=api'
-is "the pr-agent token is a Reporter token with the api scope" "$?" "$(grep pr-agent "$case_dir/curl.log")"
+grep -q 'name=pr-agent' "$case_dir/curl.log" && grep -A3 'name=pr-agent' "$case_dir/curl.log" | grep -q 'access_level=30' && grep 'name=pr-agent' "$case_dir/curl.log" | grep -q 'scopes\[\]=api'
+is "the pr-agent token is a Developer token with the api scope, so /describe can edit the MR" "$?" "$(grep pr-agent "$case_dir/curl.log")"
 no_secret_in "$out"
 is "no pr-agent token is printed" "$?" "$out"
 orphans='[{"id":41,"name":"pr-agent","active":true},{"id":42,"name":"pr-agent","active":false},{"id":43,"name":"mirror-sync","active":true}]'
@@ -145,6 +151,13 @@ is "a retry after a failed save revokes only the active unsaved pr-agent token, 
 SECRETS="gitlab-pr-agent" run pr-agent-again PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1
 [ "$code" -eq 0 ] && ! grep -q 'name=pr-agent' "$case_dir/curl.log"
 is "an existing pr-agent Secret is kept and no new token is made" "$?" "exit $code: $out"
+SECRETS="" run pr-agent-kubectl-error PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1 KUBECTL_ERROR_FOR=gitlab-pr-agent ORPHANS="$orphans"
+[ "$code" -ne 0 ] && grep -q 'cannot read the Secret gitlab-pr-agent' <<<"$out" && ! grep -q -- '--request DELETE .*/groups/7/access_tokens/' "$case_dir/curl.log" && ! grep -q 'name=pr-agent' "$case_dir/curl.log"
+is "a kubectl error other than not found stops the script and revokes and makes no token" "$?" "exit $code: $out"
+full_page="$(jq -nc '[range(0;100) | {id: (100 + .), name: "mirror-sync", active: true}]')"
+SECRETS="" run pr-agent-pages PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1 ORPHANS="$full_page" ORPHANS_PAGE2='[{"id":777,"name":"pr-agent","active":true}]'
+[ "$code" -eq 0 ] && grep -q 'page=2' "$case_dir/curl.log" && grep -q -- '--request DELETE .*/groups/7/access_tokens/777' "$case_dir/curl.log" && ! grep -q 'access_tokens/150' "$case_dir/curl.log"
+is "an unsaved pr-agent token on the second page of the token list is revoked, and no other token is" "$?" "exit $code: $out $(cat "$case_dir/curl.log")"
 SECRETS="" run pr-agent-bad PR_AGENT_NAMESPACE='Bad_NS'
 [ "$code" -ne 0 ] && [ ! -e "$case_dir/rails.log" ]
 is "a bad pr-agent namespace is refused" "$?" "exit $code: $out"

@@ -7,8 +7,8 @@
 #   gitlab-mirror  (namespace $GITLAB_NAMESPACE)  key token: a group token that pushes to the mirror group
 #   gitlab-exporter (namespace $GITLAB_NAMESPACE) key gitlabToken: a read-only group token for the pipeline exporter
 #   gitlab-runner  (namespace $RUNNER_NAMESPACE)  keys runner-token, runner-registration-token
-#   gitlab-pr-agent (namespace $PR_AGENT_NAMESPACE) keys token, WEBHOOK_SECRET: a Reporter group token that
-#                  reads merge requests and posts review comments, and a random secret for the GitLab webhook. Only if PR_AGENT_NAMESPACE is set.
+#   gitlab-pr-agent (namespace $PR_AGENT_NAMESPACE) keys token, WEBHOOK_SECRET: a Developer group token that
+#                  reads merge requests, posts review comments and edits the MR description, and a random secret for the GitLab webhook. Only if PR_AGENT_NAMESPACE is set.
 #
 # A new GitLab has no group, no runner and no known root password, and the GitLab API
 # cannot create the first token. The one thing that can is GitLab's own `gitlab-rails runner`,
@@ -43,7 +43,14 @@ else
   exec_in_gitlab=(kubectl -n "$GITLAB_NAMESPACE" exec "$GITLAB_POD" --)
 fi
 
-have_secret() { kubectl -n "$1" get secret "$2" >/dev/null 2>&1; }
+# Returns 0 if the Secret exists and 1 if it does not. Any other kubectl error (a timeout, Forbidden) stops the
+# script, so an error is never taken for a missing Secret.
+have_secret() { # namespace, name
+  local error
+  error="$(kubectl -n "$1" get secret "$2" 2>&1 >/dev/null)" && return 0
+  [[ "$error" == *NotFound* ]] && return 1
+  fail "cannot read the Secret $2 in $1: $error"
+}
 
 kubectl -n "$GITLAB_NAMESPACE" wait --for=condition=Ready "pod/$GITLAB_POD" --timeout="${GITLAB_READY_TIMEOUT:-30m}"
 
@@ -131,15 +138,24 @@ fi
 # failed to save the Secret, no one can read that token. No Secret exists in that case, so every active
 # token of this name is such a token. Revoke them first, so a retry leaves one live token.
 if [ -n "$pr_agent_namespace" ] && ! have_secret "$pr_agent_namespace" gitlab-pr-agent; then
-  orphans="$(api GET "/groups/$group_id/access_tokens?per_page=100" | jq -r '.[] | select(.name == "pr-agent" and .active == true) | .id')" || fail "cannot list the group tokens"
+  # The list has pages of 100 tokens. Read them all, so a leftover token on a later page is found.
+  orphans=""
+  page=1
+  while :; do
+    tokens="$(api GET "/groups/$group_id/access_tokens?per_page=100&page=$page")" || fail "cannot list the group tokens"
+    orphans+="$(jq -r '.[] | select(.name == "pr-agent" and .active == true) | .id' <<<"$tokens")"$'\n'
+    [ "$(jq length <<<"$tokens")" -ge 100 ] || break
+    page=$((page + 1))
+  done
   for orphan in $orphans; do
     api DELETE "/groups/$group_id/access_tokens/$orphan" >/dev/null || fail "cannot revoke the unsaved pr-agent token $orphan"
     echo "first-objects: revoked the unsaved pr-agent token $orphan"
   done
   expires="$(date -u -d '+364 days' +%Y-%m-%d)"
-  pr_agent_token="$(api POST "/groups/$group_id/access_tokens"     --data-urlencode name=pr-agent --data-urlencode "expires_at=$expires" --data-urlencode access_level=20     --data-urlencode "scopes[]=api" | jq -er .token)" || fail "cannot create the pr-agent token"
-  webhook_secret="$(head -c 32 /dev/urandom | od -An -vtx1 | tr -d ' 
-')"
+  pr_agent_token="$(api POST "/groups/$group_id/access_tokens" \
+    --data-urlencode name=pr-agent --data-urlencode "expires_at=$expires" --data-urlencode access_level=30 \
+    --data-urlencode "scopes[]=api" | jq -er .token)" || fail "cannot create the pr-agent token"
+  webhook_secret="$(head -c 32 /dev/urandom | od -An -vtx1 | tr -d ' \n')"
   put_secret "$pr_agent_namespace" gitlab-pr-agent "token=$pr_agent_token" "WEBHOOK_SECRET=$webhook_secret"
   unset pr_agent_token webhook_secret
   echo "first-objects: saved Secret gitlab-pr-agent"
