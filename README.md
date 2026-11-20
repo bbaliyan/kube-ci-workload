@@ -63,7 +63,7 @@ The bootstrap makes these parts when `prAgent.enabled` is true:
 
 | Part | Wave | What it does |
 |---|---|---|
-| `first-objects` | 1 | Makes the namespace `prAgent.namespace` and the Secret `gitlab-pr-agent` in it: a Reporter group token and a random webhook secret. It is the only owner of the namespace. |
+| `first-objects` | 1 | Makes the namespace `prAgent.namespace` and the Secret `gitlab-pr-agent` in it: a Developer group token and a random webhook secret. It is the only owner of the namespace. |
 | `substrate-prereqs` | 4 | Makes the credential policy that lets the atespace read Secrets of `prAgent.namespace` only. |
 | `substrate-install` | 7 | Turns on the Kubernetes Secrets credential provider. |
 | `substrate-actors` | 9 | Defines the actor: the pinned `gitlab_webhook` image, the model settings and the egress policy. |
@@ -76,12 +76,19 @@ The actor never holds the GitLab token. Its egress policy lets only the GitLab h
 
 The actor talks to a model server that runs outside the cluster. The consumer sets the model, the address of the server and, if the server has a login, the Secret that holds its key.
 
-1. Set `prAgent.model` to a model name of pr-agent. The prefix must be `ollama/` or `openai/`. Use `openai/` for any server with an OpenAI-compatible API.
-2. Set `prAgent.modelEndpoint` to the base URL of the server. Use a DNS name, not an IP address, because the egress policy matches host names. If you do not set it, the render fails.
-3. If the server has a login, create a Secret in `prAgent.namespace` and set `prAgent.modelApiKeySecret` to its `name` and `key`. The egress proxy sends the key as a bearer token, so the actor never holds it.
-4. Set `prAgent.contextLength` to the context length of the server, in tokens. The two numbers must be equal.
-5. Set `prAgent.enabled` to `true` and sync the bootstrap.
-6. Verify that the Applications `substrate-actors` and `substrate-registration` are Healthy.
+1. Set `prAgent.model` to a model name of pr-agent. The prefix must be `ollama/` or `openai/`.
+2. For any server with an OpenAI-compatible API, use the prefix `openai/`.
+3. Set `prAgent.modelEndpoint` to the base URL of the server. If you do not set it, the render fails.
+4. Use a DNS name, not an IP address, because the egress policy matches host names.
+5. If the address is `https`, set `prAgent.egressTrustBundle` to `true`. The `substrate-actor` chart of `substrate.revision` must accept that key. If it does not, the render fails.
+6. If the server has a login, create a Secret in `prAgent.namespace` that holds its key.
+7. Set `prAgent.modelApiKeySecret` to the `name` and the `key` of that Secret.
+8. Set `prAgent.contextLength` to the context length of the server, in tokens. The two numbers must be equal.
+9. Set `prAgent.enabled` to `true`.
+10. Sync the bootstrap.
+11. Verify that the Applications `substrate-actors` and `substrate-registration` are Healthy.
+
+The egress proxy sends the key as a bearer token, so the actor never holds it. For both prefixes, the actor holds only a placeholder in `OLLAMA__API_KEY` or `OPENAI__KEY`. For `ollama/`, verify with one review that the Ollama client of pr-agent sends the header.
 
 Example for Ollama on a laptop:
 
@@ -95,13 +102,13 @@ The model and the endpoint are values, so no model name or address is in this re
 
 ### Not done yet
 
-- The webhook shim. GitLab cannot reach a suspended actor. A small service must receive the webhook, check the secret in `gitlab-pr-agent` and send the request to the actor. No such image is published. When you have one, set `prAgent.webhook` (image by digest, port, ingress). The shim must send the value of `prAgent.sharedSecret` in `X-Gitlab-Token`. pr-agent refuses a request without its shared secret.
+- The webhook shim. GitLab cannot reach a suspended actor. The `substrate-actor` chart can run a shim that checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. The shim then sends `prAgent.hopToken` to the actor. A chart revision with the shim is not pinned here yet. After you pin it, set `prAgent.webhook`, for example with `ingress` or `allowFrom`.
 - The GitLab webhook. After the mirror sync has made the project, add a project webhook with the address of the shim and the value of `WEBHOOK_SECRET`. If the shim runs in the cluster, an administrator must allow webhooks to local addresses.
 - The idle suspend. To turn it on, set `prAgent.idleSuspend.enabled`. Prometheus must scrape the control plane. A cluster administrator must give the service account `substrate-idle-suspend` the `editor` role in the atespace with `kubectl ate update access-policy`.
 
 ### Renew the token
 
-The group token has the Reporter role and the `api` scope, because posting a comment needs write access to the API. It lives for 364 days. `first-objects` never replaces a Secret that exists. To renew the token:
+The group token has the Developer role and the `api` scope. The command `/describe` edits the title and the description of a merge request, and a Reporter cannot do that. It lives for 364 days. `first-objects` never replaces a Secret that exists. To renew the token:
 
 1. Delete the Secret `gitlab-pr-agent` in `prAgent.namespace`.
 2. Sync `first-objects`.
