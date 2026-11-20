@@ -114,9 +114,10 @@ prAgent:
   enabled: false
   # The atespace of the actor.
   atespace: reviews
-  # The namespace of the actor, its registration and the Secret gitlab-pr-agent that first-objects
-  # makes (keys token and WEBHOOK_SECRET). The credential provider may read Secrets of this namespace only.
-  namespace: substrate-system
+  # The namespace of the actor, its registration and the Secrets of the actor: gitlab-pr-agent (keys token
+  # and WEBHOOK_SECRET) and the key Secret of the model server. first-objects makes the namespace and is its only
+  # owner. The credential provider may read Secrets of this namespace only. Do not use a namespace of Substrate.
+  namespace: pr-agent
   # The gitlab_webhook image of pr-agent. Pin the tag and the digest.
   # renovate: datasource=docker depName=pragent/pr-agent versioning=docker
   image: pragent/pr-agent:0.50.0-gitlab_webhook@sha256:dd10e3f8f5079b42e54e46c231932d28d5d48084337998e04fe7acf667d70840

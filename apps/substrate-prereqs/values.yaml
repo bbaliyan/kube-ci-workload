@@ -18,4 +18,4 @@ secretKeyKey: secret-access-key
 credentialPolicy:
   enabled: false
   atespace: reviews
-  namespace: substrate-system
+  namespace: pr-agent

@@ -1,5 +1,6 @@
 {{- if .Values.prAgentNamespace }}
-# The Job writes the pr-agent Secret here. The namespace holds other objects of the pr-agent
+# The namespace of the pr-agent actor. This chart is its only owner: the Applications of the actor
+# do not create it. The Job writes the pr-agent Secret here. The namespace holds other objects of the
 # actor, so no sync removes it.
 apiVersion: v1
 kind: Namespace

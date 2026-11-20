@@ -7,8 +7,8 @@
 #   gitlab-mirror  (namespace $GITLAB_NAMESPACE)  key token: a group token that pushes to the mirror group
 #   gitlab-exporter (namespace $GITLAB_NAMESPACE) key gitlabToken: a read-only group token for the pipeline exporter
 #   gitlab-runner  (namespace $RUNNER_NAMESPACE)  keys runner-token, runner-registration-token
-#   gitlab-pr-agent (namespace $PR_AGENT_NAMESPACE) keys token, WEBHOOK_SECRET: a Developer group token that
-#                  posts review comments, and a random secret for the GitLab webhook. Only if PR_AGENT_NAMESPACE is set.
+#   gitlab-pr-agent (namespace $PR_AGENT_NAMESPACE) keys token, WEBHOOK_SECRET: a Reporter group token that
+#                  reads merge requests and posts review comments, and a random secret for the GitLab webhook. Only if PR_AGENT_NAMESPACE is set.
 #
 # A new GitLab has no group, no runner and no known root password, and the GitLab API
 # cannot create the first token. The one thing that can is GitLab's own `gitlab-rails runner`,
@@ -127,10 +127,18 @@ fi
 
 # The token has the same life as the others (364 days). A Secret that exists is never replaced, so
 # delete the Secret to make a new token before the old one expires.
+# GitLab shows a token value once, when it makes the token. If an earlier run made the token and then
+# failed to save the Secret, no one can read that token. No Secret exists in that case, so every active
+# token of this name is such a token. Revoke them first, so a retry leaves one live token.
 if [ -n "$pr_agent_namespace" ] && ! have_secret "$pr_agent_namespace" gitlab-pr-agent; then
+  orphans="$(api GET "/groups/$group_id/access_tokens?per_page=100" | jq -r '.[] | select(.name == "pr-agent" and .active == true) | .id')" || fail "cannot list the group tokens"
+  for orphan in $orphans; do
+    api DELETE "/groups/$group_id/access_tokens/$orphan" >/dev/null || fail "cannot revoke the unsaved pr-agent token $orphan"
+    echo "first-objects: revoked the unsaved pr-agent token $orphan"
+  done
   expires="$(date -u -d '+364 days' +%Y-%m-%d)"
-  pr_agent_token="$(api POST "/groups/$group_id/access_tokens"     --data-urlencode name=pr-agent --data-urlencode "expires_at=$expires" --data-urlencode access_level=30     --data-urlencode "scopes[]=api" | jq -er .token)" || fail "cannot create the pr-agent token"
-  webhook_secret="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' 
+  pr_agent_token="$(api POST "/groups/$group_id/access_tokens"     --data-urlencode name=pr-agent --data-urlencode "expires_at=$expires" --data-urlencode access_level=20     --data-urlencode "scopes[]=api" | jq -er .token)" || fail "cannot create the pr-agent token"
+  webhook_secret="$(head -c 32 /dev/urandom | od -An -vtx1 | tr -d ' 
 ')"
   put_secret "$pr_agent_namespace" gitlab-pr-agent "token=$pr_agent_token" "WEBHOOK_SECRET=$webhook_secret"
   unset pr_agent_token webhook_secret

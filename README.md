@@ -63,7 +63,7 @@ The bootstrap makes these parts when `prAgent.enabled` is true:
 
 | Part | Wave | What it does |
 |---|---|---|
-| `first-objects` | 1 | Makes the Secret `gitlab-pr-agent` in `prAgent.namespace`: a Developer group token and a random webhook secret. |
+| `first-objects` | 1 | Makes the namespace `prAgent.namespace` and the Secret `gitlab-pr-agent` in it: a Reporter group token and a random webhook secret. It is the only owner of the namespace. |
 | `substrate-prereqs` | 4 | Makes the credential policy that lets the atespace read Secrets of `prAgent.namespace` only. |
 | `substrate-install` | 7 | Turns on the Kubernetes Secrets credential provider. |
 | `substrate-actors` | 9 | Defines the actor: the pinned `gitlab_webhook` image, the model settings and the egress policy. |
@@ -95,17 +95,19 @@ The model and the endpoint are values, so no model name or address is in this re
 
 ### Not done yet
 
-- The webhook shim. GitLab cannot reach a suspended actor, so a small service must receive the webhook, check the secret in `gitlab-pr-agent` and send the request to the actor. No such image is published. When you have one, set `prAgent.webhook` (image by digest, port, ingress). The shim must send the value of `prAgent.sharedSecret` in `X-Gitlab-Token`, because pr-agent refuses a request without its shared secret.
+- The webhook shim. GitLab cannot reach a suspended actor. A small service must receive the webhook, check the secret in `gitlab-pr-agent` and send the request to the actor. No such image is published. When you have one, set `prAgent.webhook` (image by digest, port, ingress). The shim must send the value of `prAgent.sharedSecret` in `X-Gitlab-Token`. pr-agent refuses a request without its shared secret.
 - The GitLab webhook. After the mirror sync has made the project, add a project webhook with the address of the shim and the value of `WEBHOOK_SECRET`. If the shim runs in the cluster, an administrator must allow webhooks to local addresses.
 - The idle suspend. To turn it on, set `prAgent.idleSuspend.enabled`. Prometheus must scrape the control plane. A cluster administrator must give the service account `substrate-idle-suspend` the `editor` role in the atespace with `kubectl ate update access-policy`.
 
 ### Renew the token
 
-The group token lives for 364 days. `first-objects` never replaces a Secret that exists. To renew the token:
+The group token has the Reporter role and the `api` scope, because posting a comment needs write access to the API. It lives for 364 days. `first-objects` never replaces a Secret that exists. To renew the token:
 
 1. Delete the Secret `gitlab-pr-agent` in `prAgent.namespace`.
 2. Sync `first-objects`.
 3. Revoke the old token in the group settings of GitLab.
+
+If a run makes the token and cannot save the Secret, nobody can read that token. The next run revokes it and makes a new one.
 
 ## Upgrade GitLab
 

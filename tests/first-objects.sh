@@ -71,6 +71,7 @@ echo "curl $*" >>"$STATE/curl.log"
 case "$*" in
   *"--request GET"*"/groups/mirror"*)
     if [ -n "${GROUP_EXISTS:-}" ]; then echo '{"id":7}'; else echo '{"message":"404 Group Not Found"}' >&2; exit 22; fi ;;
+  *"--request GET"*"/groups/7/access_tokens"*) echo "${ORPHANS:-[]}" ;;
   *"--request POST"*"/groups/7/access_tokens"*"name=pipeline-exporter"*) echo '{"token":"EXPORTERTOKEN345"}' ;;
   *"--request POST"*"/groups/7/access_tokens"*"name=pr-agent"*) echo '{"token":"PRAGENTTOKEN678"}' ;;
   *"--request POST"*"/groups/7/access_tokens"*) echo '{"token":"MIRRORTOKEN789"}' ;;
@@ -126,16 +127,22 @@ is "a new GitLab gets a new root password" "$?" "$(cat "$case_dir/rails.code")"
 # ---- the pr-agent token ------------------------------------------------------------
 [ "$(awk '{print $1}' "$case_dir/applied" | grep -c pr-agent)" -eq 0 ] && ! grep -q 'name=pr-agent' "$case_dir/curl.log"
 is "with no pr-agent namespace it makes no pr-agent token" "$?" "$(cat "$case_dir/curl.log")"
-SECRETS="" run pr-agent PR_AGENT_NAMESPACE=substrate-system GROUP_EXISTS=1
+SECRETS="" run pr-agent PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1
 [ "$code" -eq 0 ] && grep -q '^gitlab-pr-agent token WEBHOOK_SECRET' "$case_dir/applied"
 is "a pr-agent namespace makes the Secret with a token and a webhook secret" "$?" "exit $code: $out $(cat "$case_dir/applied")"
-grep -q -- '-n substrate-system create secret generic gitlab-pr-agent --from-literal=token=PRAGENTTOKEN678 --from-literal=WEBHOOK_SECRET=[0-9a-f]\{64\}' "$case_dir/kubectl.log"
+grep -q -- '-n pr-agent create secret generic gitlab-pr-agent --from-literal=token=PRAGENTTOKEN678 --from-literal=WEBHOOK_SECRET=[0-9a-f]\{64\}' "$case_dir/kubectl.log"
 is "the Secret is in the pr-agent namespace, holds the pr-agent token and a 64-character random secret" "$?" "$(cat "$case_dir/kubectl.log")"
-grep -q 'name=pr-agent' "$case_dir/curl.log" && grep -A3 'name=pr-agent' "$case_dir/curl.log" | grep -q 'access_level=30' && grep 'name=pr-agent' "$case_dir/curl.log" | grep -q 'scopes\[\]=api'
-is "the pr-agent token is a Developer token with the api scope" "$?" "$(grep pr-agent "$case_dir/curl.log")"
+grep -q 'name=pr-agent' "$case_dir/curl.log" && grep -A3 'name=pr-agent' "$case_dir/curl.log" | grep -q 'access_level=20' && grep 'name=pr-agent' "$case_dir/curl.log" | grep -q 'scopes\[\]=api'
+is "the pr-agent token is a Reporter token with the api scope" "$?" "$(grep pr-agent "$case_dir/curl.log")"
 no_secret_in "$out"
 is "no pr-agent token is printed" "$?" "$out"
-SECRETS="gitlab-pr-agent" run pr-agent-again PR_AGENT_NAMESPACE=substrate-system GROUP_EXISTS=1
+orphans='[{"id":41,"name":"pr-agent","active":true},{"id":42,"name":"pr-agent","active":false},{"id":43,"name":"mirror-sync","active":true}]'
+SECRETS="" run pr-agent-retry PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1 ORPHANS="$orphans"
+delete_line="$(grep -n -- '--request DELETE .*/groups/7/access_tokens/41' "$case_dir/curl.log" | head -1 | cut -d: -f1)"
+create_line="$(grep -n 'name=pr-agent' "$case_dir/curl.log" | head -1 | cut -d: -f1)"
+[ "$code" -eq 0 ] && [ -n "$delete_line" ] && [ -n "$create_line" ] && [ "$delete_line" -lt "$create_line" ]   && ! grep -q 'access_tokens/42' "$case_dir/curl.log" && ! grep -q 'access_tokens/43' "$case_dir/curl.log"
+is "a retry after a failed save revokes only the active unsaved pr-agent token, then makes one new token" "$?" "exit $code: $out $(cat "$case_dir/curl.log")"
+SECRETS="gitlab-pr-agent" run pr-agent-again PR_AGENT_NAMESPACE=pr-agent GROUP_EXISTS=1
 [ "$code" -eq 0 ] && ! grep -q 'name=pr-agent' "$case_dir/curl.log"
 is "an existing pr-agent Secret is kept and no new token is made" "$?" "exit $code: $out"
 SECRETS="" run pr-agent-bad PR_AGENT_NAMESPACE='Bad_NS'

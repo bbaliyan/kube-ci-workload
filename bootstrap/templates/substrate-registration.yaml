@@ -1,5 +1,5 @@
 {{- if .Values.prAgent.enabled }}
-# The install lists system:serviceaccount:substrate-system:substrate-registration as an owner of the
+# The install lists system:serviceaccount:<prAgent.namespace>:substrate-registration as an owner of the
 # control plane. This name and this namespace give the Job that service account.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -30,8 +30,6 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
     retry:
       limit: 5
       backoff:

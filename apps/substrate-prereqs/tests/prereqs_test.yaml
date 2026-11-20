@@ -50,7 +50,7 @@ tests:
       credentialPolicy:
         enabled: true
         atespace: reviews
-        namespace: substrate-system
+        namespace: pr-agent
     asserts:
       - equal:
           path: metadata.name
@@ -60,7 +60,7 @@ tests:
           value: ate-system
       - matchRegex:
           path: data["namespace-policy.yaml"]
-          pattern: "atespace: reviews\n  allowedNamespaces:\n  - substrate-system"
+          pattern: "atespace: reviews\n  allowedNamespaces:\n  - pr-agent"
   - it: makes no credential policy by default
     template: templates/credential-policy.yaml
     asserts:

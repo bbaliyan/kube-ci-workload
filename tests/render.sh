@@ -142,14 +142,14 @@ is "the workers come first, then the actor, its registration and the idle suspen
 is "the idle suspend stays off until its switch is on" "$?"
 
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
-grep -q 'path: charts/substrate-actor' <<<"$out" && grep -q 'namespace: substrate-system' <<<"$out" && grep -q 'snapshotStorageLocation: objectstore://substrate-snapshots' <<<"$out"
+grep -q 'path: charts/substrate-actor' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out" && grep -q 'snapshotStorageLocation: objectstore://substrate-snapshots' <<<"$out"
 is "the actor chart installs from the pinned Substrate repo into the pr-agent namespace" "$?" "$out"
 grep -Eq 'image: pragent/pr-agent:[0-9]+\.[0-9]+\.[0-9]+-gitlab_webhook@sha256:[0-9a-f]{64}$' <<<"$out" && ! grep -q ':latest' <<<"$out"
 is "the pr-agent image has a version tag and a digest, never latest" "$?" "$out"
 grep -q 'CONFIG__MODEL: ollama/qwen3-coder:30b' <<<"$out" && grep -q "CONFIG__FALLBACK_MODELS: '\[\]'" <<<"$out" && grep -q 'CONFIG__CUSTOM_MODEL_MAX_TOKENS: "16000"' <<<"$out" \
   && grep -q 'CONFIG__DUPLICATE_PROMPT_EXAMPLES: "true"' <<<"$out" && grep -q 'OLLAMA__API_BASE: http://model.example.test:11434' <<<"$out"
 is "the model settings follow the model prefix, and the endpoint is the value" "$?" "$out"
-grep -q 'credentialUri: ate-secret://k8s.io/default/substrate-system/gitlab-pr-agent/token' <<<"$out" && grep -q 'header: Authorization' <<<"$out" \
+grep -q 'credentialUri: ate-secret://k8s.io/default/pr-agent/gitlab-pr-agent/token' <<<"$out" && grep -q 'header: Authorization' <<<"$out" \
   && grep -q 'GITLAB__AUTH_TYPE: oauth_token' <<<"$out" && ! grep -Eq 'glpat-|PERSONAL_ACCESS_TOKEN: [^r]' <<<"$out"
 is "the GitLab token is set by the egress proxy from the Secret, and no token is in the values" "$?" "$out"
 grep -A3 -- '- hostnames:' <<<"$out" | grep -q 'model.example.test' && grep -q -- '- 11434' <<<"$out"
@@ -181,18 +181,24 @@ grep -q 'webhook:' <<<"$out" && grep -q 'name: gitlab-pr-agent' <<<"$out"
 is "a shim image gives the actor a webhook that reads the generated Secret" "$?" "$out"
 
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-registration.yaml)"
-grep -q 'path: charts/substrate-registration' <<<"$out" && grep -q 'name: substrate-registration$' <<<"$out" && grep -q 'namespace: substrate-system' <<<"$out" \
+grep -q 'path: charts/substrate-registration' <<<"$out" && grep -q 'name: substrate-registration$' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out" \
   && grep -Eq 'digest: sha256:[0-9a-f]{64}' <<<"$out" && grep -q 'name: pr-agent' <<<"$out"
-is "the registration runs as substrate-registration in substrate-system, the owner that the install names, and pins its image" "$?" "$out"
+is "the registration runs as substrate-registration in pr-agent, the owner that the install names, and pins its image" "$?" "$out"
 helm template b "$repo/bootstrap" --show-only templates/substrate-install.yaml "${pr_agent[@]}" | grep -q 'k8s.io' \
-  && helm template b "$repo/bootstrap" --show-only templates/substrate-install.yaml "${pr_agent[@]}" | grep -q 'system:serviceaccount:substrate-system:substrate-registration'
+  && helm template b "$repo/bootstrap" --show-only templates/substrate-install.yaml "${pr_agent[@]}" | grep -q 'system:serviceaccount:pr-agent:substrate-registration'
 is "the install uses the Kubernetes Secrets credential provider and lists the registration account as an owner" "$?"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-prereqs.yaml)"
-grep -q 'credentialPolicy' <<<"$out" && grep -q 'atespace: reviews' <<<"$out" && grep -q 'namespace: substrate-system' <<<"$out"
+grep -q 'credentialPolicy' <<<"$out" && grep -q 'atespace: reviews' <<<"$out" && grep -q 'namespace: pr-agent' <<<"$out"
 is "the prerequisites grant the atespace the pr-agent namespace, before the install" "$?" "$out"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/first-objects.yaml)"
-grep -q 'prAgentNamespace: substrate-system' <<<"$out"
+grep -q 'prAgentNamespace: pr-agent' <<<"$out"
 is "first-objects makes the pr-agent Secret in the pr-agent namespace" "$?" "$out"
+for app in substrate-actors substrate-registration substrate-idle-suspend; do
+  ! helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.idleSuspend.enabled=true --show-only "templates/$app.yaml" | grep -q CreateNamespace
+  is "$app does not create the pr-agent namespace, so first-objects is its only owner" "$?"
+done
+[ "$(helm template f "$repo/apps/first-objects" --set prAgentNamespace=pr-agent | grep -A8 '^kind: Namespace' | grep -c '  name: pr-agent$')" -eq 1 ]
+is "first-objects makes the pr-agent namespace once" "$?"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.idleSuspend.enabled=true --show-only templates/substrate-idle-suspend.yaml)"
 grep -q 'path: charts/substrate-idle-suspend' <<<"$out" && grep -q 'url: http://prometheus-prometheus.prometheus.svc:9090' <<<"$out" && grep -q 'name: pr-agent' <<<"$out" && grep -q 'atespace: reviews' <<<"$out"
 is "the idle suspend watches the actor and reads the Prometheus of the platform" "$?" "$out"
