@@ -1,0 +1,31 @@
+# Example job: ask pr-agent for a review and gate the pipeline on the result.
+# Copy the job into the .gitlab-ci.yml of a project, and copy pr-agent-gate.sh next to it.
+pr-agent-review:
+  stage: test
+  # The tag of a small in-cluster Kubernetes runner.
+  tags: [commit]
+  # Nothing waits for this job, and no other job needs it.
+  needs: []
+  # The gate waits up to PR_AGENT_WAIT_MINUTES, so the job timeout must be longer.
+  timeout: 30 minutes
+  image: alpine:3.24
+  variables:
+    GIT_DEPTH: "1"
+    # A small pod. The runner must allow these overrides, see the README.
+    KUBERNETES_CPU_REQUEST: 100m
+    KUBERNETES_CPU_LIMIT: 200m
+    KUBERNETES_MEMORY_REQUEST: 64Mi
+    KUBERNETES_MEMORY_LIMIT: 128Mi
+    PR_AGENT_URL: https://pr-agent.example.com/pipeline
+    GITLAB_API_URL: https://gitlab.example.com/api/v4
+    PR_AGENT_WAIT_MINUTES: "25"
+    PR_AGENT_POLL_SECONDS: "20"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  id_tokens:
+    PR_AGENT_ID_TOKEN:
+      aud: pr-agent
+  before_script:
+    - apk add --no-cache curl jq > /dev/null
+  script:
+    - sh pr-agent-gate.sh
