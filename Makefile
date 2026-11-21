@@ -65,6 +65,7 @@ test-scripts:
 	tests/first-objects.sh
 	tests/render.sh
 	tests/mirror-sync.sh
+	python3 examples/pr-agent-review-gate/pr-agent-gate.py --self-test
 
 test-integration:
 	tests/integration.sh

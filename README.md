@@ -227,7 +227,7 @@ On a Windows runner with the PowerShell shell, the script is:
 
 #### The gate
 
-The example `examples/pr-agent-review-gate/` makes the job wait for the review and fail the pipeline if the review is not complete. It has the job (`gitlab-ci.yml`), the script (`pr-agent-gate.sh`) and a test of the decision logic (`pr-agent-gate-test.sh`, with saved review notes in `fixtures/`).
+The example `examples/pr-agent-review-gate/` makes the job wait for the review and fail the pipeline if the review is not complete. It has the job (`gitlab-ci.yml`), the script (`pr-agent-gate.py`, Python standard library only, so it runs on a Linux and on a Windows runner) with a self-test of the decision logic (`pr-agent-gate-test.sh`, with saved review notes in `fixtures/`).
 
 The job:
 
@@ -238,7 +238,7 @@ The job:
 
 The job reads the notes with the job token (`CI_JOB_TOKEN`). Verify that your GitLab version lets the job token read `GET /projects/:id/merge_requests/:iid/notes`. If it does not, store a project access token with the scope `read_api` and the role Reporter in a masked CI variable, and send it in the `PRIVATE-TOKEN` header instead. `GITLAB_API_URL` must be an address that the job pod can reach.
 
-Run `sh examples/pr-agent-review-gate/pr-agent-gate-test.sh` to test the logic offline.
+Run `python3 examples/pr-agent-review-gate/pr-agent-gate.py --self-test` to test the logic offline. `make test-scripts` runs it.
 
 The job is made for a small in-cluster runner that has the tag `commit`. The review runs in the actor, so the job only waits. It needs a small pod, and `needs: []` lets it run next to the other jobs. The job sets the pod size with the variables `KUBERNETES_CPU_REQUEST`, `KUBERNETES_CPU_LIMIT`, `KUBERNETES_MEMORY_REQUEST` and `KUBERNETES_MEMORY_LIMIT`. The Kubernetes executor ignores these variables unless the runner config sets a ceiling for each one. If a ceiling is missing, the job gets the default pod size of the runner. Set the ceilings in the `[runners.kubernetes]` block of the runner:
 
