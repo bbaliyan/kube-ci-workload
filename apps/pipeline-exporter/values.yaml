@@ -7,6 +7,8 @@ gitlab-ci-pipelines-exporter:
   config:
     gitlab:
       url: http://gitlab.gitlab.svc.cluster.local
+      # Readiness calls this URL. Its default is on gitlab.com, so point it at the same GitLab.
+      health_url: http://gitlab.gitlab.svc.cluster.local/explore
     # Every project of the mirror group. Its branch default is main and master.
     wildcards:
       - owner:
