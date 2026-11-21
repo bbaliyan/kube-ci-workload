@@ -6,7 +6,7 @@
 
 <details> <summary><strong>⚙️ Agent run details</strong></summary>
 
-- Model: ollama/qwen3-coder:30b
+- Model: provider/model-a
 - Tokens: 70,000 in / 2,000 out / 72,000 total
 - Time cost: 300.0s
 - AI calls: 4

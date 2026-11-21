@@ -7,7 +7,7 @@
 - scripts/module_41.sh
 - scripts/module_42.sh
 
-- Model: ollama/example-model
+- Model: provider/model-b
 - Tokens: 200,000 in / 5,000 out / 205,000 total
 - Time cost: 900.0s
 - AI calls: 20
