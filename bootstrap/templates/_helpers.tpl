@@ -95,10 +95,19 @@
   "credentialUri" (printf "ate-secret://k8s.io/default/%s/%s/%s" $p.namespace $secretName $secretKey)) -}}
 {{- $_ := set $env $provider.key "replaced-by-the-egress-proxy" -}}
 {{- end -}}
+{{- /*
+GitLab builds the link to the next page of a list from its external URL, not from the address of the request.
+python-gitlab follows that link unless the client has keep_base_url, and pr-agent has no setting for it. So a
+long list (more than 100 changed files, notes or discussions) leaves prAgent.gitlabUrl for a host that the actor
+may not resolve or reach. The command turns keep_base_url on for every client and then runs gunicorn. The args
+are the rest of the CMD of the gitlab_webhook image, which the command replaces.
+*/ -}}
 {{- $actor := dict
   "name" "pr-agent"
   "atespace" $p.atespace
   "image" $p.image
+  "command" (list "python" "-c" `import functools, runpy, gitlab; gitlab.Gitlab.__init__ = functools.partialmethod(gitlab.Gitlab.__init__, keep_base_url=True); runpy.run_module("gunicorn", run_name="__main__", alter_sys=True)`)
+  "args" (list "-k" "uvicorn_worker.UvicornWorker" "-c" "pr_agent/servers/gunicorn_config.py" "--forwarded-allow-ips" "*" "pr_agent.servers.gitlab_webhook:app")
   "env" $env
   "resources" (dict "cpuMillicores" $p.cpuMillicores "memoryBytes" $p.memoryBytes)
   "wakeupProbe" (dict "path" "/" "port" 80)

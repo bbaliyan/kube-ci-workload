@@ -159,6 +159,9 @@ grep -q 'path: charts/substrate-actor' <<<"$out" && grep -q 'namespace: pr-agent
 is "the actor chart installs from the pinned Substrate repo into the pr-agent namespace" "$?" "$out"
 grep -Eq 'image: pragent/pr-agent:[0-9]+\.[0-9]+\.[0-9]+-gitlab_webhook@sha256:[0-9a-f]{64}$' <<<"$out" && ! grep -q ':latest' <<<"$out"
 is "the pr-agent image has a version tag and a digest, never latest" "$?" "$out"
+grep -q 'keep_base_url=True); runpy.run_module("gunicorn", run_name="__main__", alter_sys=True)' <<<"$(tr -d '
+' <<<"$out" | sed 's/  */ /g')"   && grep -A7 -- '- args:' <<<"$out" | tail -1 | grep -q -- '- pr_agent.servers.gitlab_webhook:app$'
+is "the actor keeps GitLab page links on gitlabUrl and runs the gunicorn server of the image" "$?" "$out"
 grep -q 'CONFIG__MODEL: ollama/qwen3-coder:30b' <<<"$out" && grep -q "CONFIG__FALLBACK_MODELS: '\[\]'" <<<"$out" && grep -q 'CONFIG__CUSTOM_MODEL_MAX_TOKENS: "16000"' <<<"$out" \
   && grep -q 'CONFIG__DUPLICATE_PROMPT_EXAMPLES: "true"' <<<"$out" && grep -q 'OLLAMA__API_BASE: http://model.example.test:11434' <<<"$out"
 is "the model settings follow the model prefix, and the endpoint is the value" "$?" "$out"
