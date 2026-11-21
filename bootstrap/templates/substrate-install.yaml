@@ -33,6 +33,9 @@ spec:
           "postgres" (dict
             "resources" (dict "requests" (dict "cpu" "250m" "memory" "512Mi") "limits" (dict "cpu" "2" "memory" "2Gi"))
             "storage" "10Gi") -}}
+        {{- if and .Values.prAgent.enabled .Values.prAgent.webhook }}
+        {{- $_ := set (get $install "config") "ingressAllowedSPIFFEIDs" (printf "spiffe://cluster.local/ns/%s/sa/pr-agent-webhook" .Values.prAgent.namespace) -}}
+        {{- end }}
         {{- mergeOverwrite $install .Values.substrate.install.helmValues | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
