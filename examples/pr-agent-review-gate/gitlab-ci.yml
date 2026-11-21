@@ -1,0 +1,31 @@
+# Example job: ask pr-agent for a review and gate the pipeline on the result.
+# Copy the job into the .gitlab-ci.yml of a project, and copy pr-agent-gate.py next to it.
+pr-agent-review:
+  stage: test
+  # The tag of a small in-cluster Kubernetes runner.
+  tags: [commit]
+  # Nothing waits for this job, and no other job needs it.
+  needs: []
+  # The gate waits up to PR_AGENT_WAIT_MINUTES, so the job timeout must be longer.
+  timeout: 30 minutes
+  image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+  variables:
+    GIT_DEPTH: "1"
+    # A small pod. The runner must allow these overrides, see the README.
+    KUBERNETES_CPU_REQUEST: 100m
+    KUBERNETES_CPU_LIMIT: 200m
+    KUBERNETES_MEMORY_REQUEST: 64Mi
+    KUBERNETES_MEMORY_LIMIT: 128Mi
+    PR_AGENT_URL: https://pr-agent.example.com/pipeline
+    GITLAB_API_URL: https://gitlab.example.com/api/v4
+    PR_AGENT_WAIT_MINUTES: "25"
+    PR_AGENT_POLL_SECONDS: "20"
+    # A lab ingress with a self-signed certificate needs "1". Remove it when the certificate is trusted.
+    PR_AGENT_INSECURE: "0"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  id_tokens:
+    PR_AGENT_ID_TOKEN:
+      aud: pr-agent
+  script:
+    - python pr-agent-gate.py

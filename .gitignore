@@ -2,3 +2,6 @@
 charts/
 Chart.lock
 out/
+
+# Python bytecode
+__pycache__/

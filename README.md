@@ -189,7 +189,7 @@ The job sends a comment event with the command, as GitLab does for a comment. pr
 
 A real comment event also has `object_attributes.id`, the ID of the comment. pr-agent puts its start reaction on that comment, and without the ID the command fails. The job has no comment, so it turns the reaction off with `--config.reaction_on_start=` in the command.
 
-The answer is 200 when the actor accepted the event. The review then runs in the actor and appears on the merge request a little later. A failed review does not fail the job.
+The answer is 200 when the actor accepted the event. The review then runs in the actor and appears on the merge request a little later. This job fails only if the request is refused. To fail the job on a failed or incomplete review, use the gate below.
 
 ```yaml
 pr-agent-review:
@@ -223,6 +223,30 @@ On a Windows runner with the PowerShell shell, the script is:
       } | ConvertTo-Json -Depth 3
       Invoke-RestMethod -Method Post -Uri https://pr-agent.example.com/pipeline -TimeoutSec 200 `
         -ContentType application/json -Headers @{ Authorization = "Bearer $env:PR_AGENT_ID_TOKEN" } -Body $event
+```
+
+#### The gate
+
+The example `examples/pr-agent-review-gate/` makes the job wait for the review and fail the pipeline if the review is not complete. It has the job (`gitlab-ci.yml`), the script (`pr-agent-gate.py`, Python standard library only, so it runs on a Linux and on a Windows runner) with a self-test of the decision logic (`python3 pr-agent-gate.py --self-test`).
+
+The job:
+
+1. Sends the same request as above and records the time.
+2. Polls the notes of the merge request every `PR_AGENT_POLL_SECONDS` (default 20 seconds), for up to `PR_AGENT_WAIT_MINUTES` (default 25 minutes). It looks for a note of the review bot that is newer than the request and contains `PR Reviewer Guide` or `Failed to review PR`. A note that says `Preparing review` is progress and is ignored. The time of the request is the `Date` header of the pr-agent answer, so a wrong clock on the runner does not matter. If you changed the review title with the pr-agent setting `review_heading`, set `PR_AGENT_REVIEW_HEADING` to the same text. A warning is only counted when it is on a line that starts with the info or warning sign, so code quoted in a review does not fail the job.
+3. Prints the chunk line and the run details (model, tokens, time cost, AI calls) into the job log.
+4. Fails if the final note says `chunk(s) failed`, `Failed to review PR` or `were not included in this review`. It also fails if no final note appears in time, or if pr-agent refuses the request. Otherwise it passes.
+
+The job reads the notes with the job token (`CI_JOB_TOKEN`). Not every GitLab version lets the job token read `GET /projects/:id/merge_requests/:iid/notes`. If yours does not, the job fails at once and prints the HTTP status. In that case store a project access token with the scope `read_api` and the role Reporter in a masked CI variable, and send it in the `PRIVATE-TOKEN` header instead. `GITLAB_API_URL` must be an address that the job pod can reach.
+
+Run `python3 examples/pr-agent-review-gate/pr-agent-gate.py --self-test` to test the logic offline. `make test-scripts` runs it.
+
+The job is made for a small in-cluster runner that has the tag `commit`. The review runs in the actor, so the job only waits. It needs a small pod, and `needs: []` lets it run next to the other jobs. The job sets the pod size with the variables `KUBERNETES_CPU_REQUEST`, `KUBERNETES_CPU_LIMIT`, `KUBERNETES_MEMORY_REQUEST` and `KUBERNETES_MEMORY_LIMIT`. The Kubernetes executor ignores these variables unless the runner config sets a ceiling for each one. If a ceiling is missing, the job gets the default pod size of the runner. Set the ceilings in the `[runners.kubernetes]` block of the runner:
+
+```toml
+cpu_request_overwrite_max_allowed = "200m"
+cpu_limit_overwrite_max_allowed = "200m"
+memory_request_overwrite_max_allowed = "128Mi"
+memory_limit_overwrite_max_allowed = "128Mi"
 ```
 
 #### What a GitLab of your IT department must give
