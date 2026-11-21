@@ -67,9 +67,14 @@
   "GITLAB__SHARED_SECRET" $p.hopToken -}}
 {{- $_ := set $env $provider.base $p.modelEndpoint -}}
 {{- if $p.runDetails }}{{ $_ := set $env "CONFIG__OUTPUT_RUN_DETAILS" "true" }}{{ end -}}
+{{- $timeout := int $p.modelTimeoutSeconds -}}
+{{- if lt $timeout 1 }}{{ fail "prAgent.modelTimeoutSeconds must be a whole number of seconds, at least 1" }}{{ end -}}
+{{- $_ := set $env "CONFIG__AI_TIMEOUT" ($timeout | toString) -}}
 {{- if $p.largeReviews }}
+{{- $calls := int $p.maxReviewCalls -}}
+{{- if lt $calls 1 }}{{ fail "prAgent.maxReviewCalls must be a whole number, at least 1" }}{{ end -}}
 {{- $_ := set $env "PR_REVIEWER__ENABLE_LARGE_PR_CHUNKING" "true" -}}
-{{- $_ := set $env "PR_REVIEWER__MAX_NUMBER_OF_CALLS" ($p.maxReviewCalls | toString) -}}
+{{- $_ := set $env "PR_REVIEWER__MAX_NUMBER_OF_CALLS" ($calls | toString) -}}
 {{- end -}}
 {{- /* The egress gateway ends TLS and starts it again, so the actor must trust the gateway CA for every https rule. */ -}}
 {{- $https := or (eq $model.protocol "https") $gitlabHttps -}}

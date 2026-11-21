@@ -138,12 +138,18 @@ prAgent:
   # tokens, the time cost and the number of model calls. It lets you compare reviews across models and settings.
   # It is a pr-agent setting (config.output_run_details), and it is off in pr-agent itself.
   runDetails: true
-  # A review of a diff that does not fit the context (prAgent.contextLength) is split into chunks, one model call
-  # each, and the results are merged into one review. A diff that fits is reviewed in one call. Nothing else to
-  # tune: the chunk size follows contextLength. maxReviewCalls only caps the calls of one review: files beyond it
-  # are listed as not reviewed in the review. Set largeReviews to false to review only what fits in one call.
+  # When whole files do not fit the context (prAgent.contextLength), the review is split into chunks, one model call
+  # each, and the results are merged into one review. A diff that fits takes one call. The chunk size follows
+  # contextLength, so there is nothing else to tune. The chunk calls of one review run at the same time, and an
+  # MR event also starts /describe and /improve, which split large diffs on their own. maxReviewCalls caps the
+  # chunk calls of one review, so it bounds the burst on the model server and its rate limit. Files beyond it are
+  # listed as not reviewed. One file that is too large alone is only clipped, in one call. Set largeReviews to
+  # false to review only what fits in one call.
   largeReviews: true
-  maxReviewCalls: 20
+  maxReviewCalls: 8
+  # The seconds that pr-agent waits for one model call before it retries. Raise it for a model server that
+  # queues requests, for example a busy hosted model or a local server that handles calls one at a time.
+  modelTimeoutSeconds: 600
   # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
   # More GitLab addresses that the actor may call, with the same token. GitLab builds the links to the next page of
