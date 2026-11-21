@@ -11,6 +11,7 @@ The CI workloads of the homelab `ci` cluster, as Argo CD apps. The cluster insta
 | `apps/mirror-sync/` | One pod that mirrors GitHub repositories into the `mirror` group every 60 seconds. |
 | `apps/pipeline-exporter/` | Exports the status and durations of the mirrored projects' pipelines to Prometheus. |
 | `apps/ci-monitoring/` | The KPI rules and the Grafana dashboards. |
+| `apps/pr-agent-webhook/` | The GitLab webhook shim of pr-agent: an Envoy that checks the webhook secret and calls the actor. |
 | `apps/tailscale-operator/` | The Tailscale operator and the ProxyGroup that serves the tailnet names. |
 | `platform-values/` | Settings for the platform components of the cluster. See below. |
 
@@ -67,6 +68,7 @@ The bootstrap makes these parts when `prAgent.enabled` is true:
 | `substrate-prereqs` | 4 | Makes the credential policy that lets the atespace read Secrets of `prAgent.namespace` only. |
 | `substrate-install` | 7 | Turns on the Kubernetes Secrets credential provider. |
 | `substrate-actors` | 9 | Defines the actor: the pinned `gitlab_webhook` image, the model settings and the egress policy. |
+| `pr-agent-webhook` | 9 | Runs the webhook shim. Only with `prAgent.webhook`. |
 | `substrate-registration` | 10 | Registers the actor in the control plane. |
 | `substrate-idle-suspend` | 11 | Suspends the idle actor. It has its own switch and is off. |
 
@@ -102,8 +104,37 @@ The model and the endpoint are values, so no model name or address is in this re
 
 ### Not done yet
 
-- The webhook shim. GitLab cannot reach a suspended actor. The `substrate-actor` chart can run a shim that checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. The router allow-list `config.ingressAllowedSPIFFEIDs` is set to the shim identity. To allow more callers, set `substrate.install.helmValues.config.ingressAllowedSPIFFEIDs` to a comma-separated list. It is added to the shim identity. The shim then sends `prAgent.hopToken` to the actor. The pinned chart revision has the shim. Set `prAgent.webhook`, for example with `ingress` or `allowFrom`.
 - The idle suspend. To turn it on, set `prAgent.idleSuspend.enabled`. Prometheus must scrape the control plane. A cluster administrator must give the service account `substrate-idle-suspend` the `editor` role in the atespace with `kubectl ate update access-policy`.
+
+### The webhook shim
+
+GitLab cannot reach a suspended actor, so it calls the shim, and the shim calls the router of the control plane. The router wakes the actor. The chart is `apps/pr-agent-webhook`. The shim:
+
+- Checks `X-Gitlab-Token` against the key `WEBHOOK_SECRET` of the Secret `gitlab-pr-agent`. A wrong or missing token gets a 401.
+- Replaces the token with `prAgent.hopToken`, which the actor expects as its shared secret.
+- Sets the header `ate-target-actor` to `<prAgent.atespace>/pr-agent`.
+- Calls the router over mTLS with the certificate of its service account, `pr-agent-webhook`.
+- Tries again after a refused connection, a 502, a 503, a 504 or a try that runs out of time. By default, it makes 3 tries of 60 seconds and waits 190 seconds in total.
+
+The router allow-list `config.ingressAllowedSPIFFEIDs` is set to the shim identity, `spiffe://cluster.local/ns/<prAgent.namespace>/sa/pr-agent-webhook`. To allow more callers, set `substrate.install.helmValues.config.ingressAllowedSPIFFEIDs` to a comma-separated list. It is added to the shim identity.
+
+To turn on the shim, set `prAgent.webhook`. Its keys are values of `apps/pr-agent-webhook/values.yaml`, for example `{port: 8080}`. The bootstrap always sets `actor` and `hopToken`, so the shim and the actor agree.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `port` | `8080` | The port of the shim and its Service. |
+| `retries` | `2` | Tries after the first one. `0` turns the retries off. |
+| `perTryTimeoutSeconds` | `60` | The time of one try. |
+| `timeoutSeconds` | `190` | The time of all tries. It must be at least `(retries + 1) x perTryTimeoutSeconds + retries x 5`, or the render fails. |
+| `allowFrom` | `[]` | The `from` entries of a NetworkPolicy on the shim port. Empty makes no policy. |
+| `ingressRoute.enabled` | `false` | Makes a Traefik IngressRoute for a sender outside the cluster. |
+| `ingressRoute.host` | none | The host name of the route. It is required when the route is on. |
+| `ingressRoute.entryPoints` | `[websecure]` | The Traefik entry points. |
+| `ingressRoute.tlsSecretName` | none | The TLS Secret of the route. Without it, Traefik serves its default certificate. |
+
+If you set `allowFrom` and `ingressRoute`, add the namespace of Traefik to `allowFrom`.
+
+The `substrate-actor` chart of the pinned `substrate.revision` can still run a shim of its own, with the same names. The bootstrap never gives it a `webhook` block, and the render fails if `prAgent.actorHelmValues` sets one.
 
 ### The GitLab webhook
 
@@ -111,7 +142,7 @@ GitLab sends merge request events and comment events to the shim. A comment even
 
 With GitLab in the cluster, `first-objects` makes the webhook:
 
-1. Set `prAgent.webhook`, so the actor has a shim.
+1. Set `prAgent.webhook`, so the bootstrap runs the shim.
 2. Set `prAgent.webhookProjects` to the paths of the projects, for example `mirror/kube-compute`.
 3. Sync `first-objects` after the mirror sync has made the projects. A project that does not exist yet is skipped with a warning, and the next run makes its webhook.
 
@@ -123,7 +154,7 @@ Every run writes the full settings of the webhook again. The GitLab API does not
 
 The API has no timeout for one webhook. The limit is `gitlab_rails['webhook_timeout']` in `gitlab.rb` of a self-managed GitLab, and `first-objects` cannot set it. If GitLab gives up before the shim answers, raise it there.
 
-With GitLab outside the cluster, for example behind an ingress, leave `prAgent.webhookProjects` empty and make the webhook by hand:
+With GitLab outside the cluster, turn on `prAgent.webhook.ingressRoute`, leave `prAgent.webhookProjects` empty and make the webhook by hand:
 
 1. In the project, open Settings, then Webhooks.
 2. Set the URL to the address of the shim, with the path `/webhook`.

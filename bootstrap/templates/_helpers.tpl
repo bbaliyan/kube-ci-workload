@@ -93,9 +93,5 @@
   "wakeupProbe" (dict "path" "/" "port" 80)
   "egress" (append $gitlabRules $modelRule) -}}
 {{- if $https }}{{ $_ := set $actor "egressTrustBundle" true }}{{ end -}}
-{{- /* The webhook shim checks the real secret and sends the hop token, which is the secret that the actor expects. */ -}}
-{{- if $p.webhook }}
-{{- $_ := set $actor "webhook" (mergeOverwrite (dict "secret" (dict "name" "gitlab-pr-agent" "key" "WEBHOOK_SECRET") "hopToken" $p.hopToken) $p.webhook) -}}
-{{- end -}}
 {{- toJson (list $actor) -}}
 {{- end -}}

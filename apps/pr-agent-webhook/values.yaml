@@ -1,0 +1,53 @@
+# The shim takes GitLab webhooks for one actor. It checks X-Gitlab-Token against the webhook secret,
+# sends hopToken in its place and calls the router of the control plane over mTLS. The bootstrap sets
+# actor and hopToken from prAgent, so the shim and the actor always agree.
+
+# The actor that gets the webhooks. The Service and the service account are named <name>-webhook. The
+# router allow-list names that service account.
+actor:
+  atespace: reviews
+  name: pr-agent
+
+# The public value that the shim sends in X-Gitlab-Token. The actor expects it as its shared secret.
+# It is not the webhook secret.
+hopToken: internal-hop-from-the-webhook-shim
+
+# The Secret and the key that hold the webhook secret. first-objects makes them.
+secret:
+  name: gitlab-pr-agent
+  key: WEBHOOK_SECRET
+
+# The port of the shim and its Service.
+port: 8080
+
+# The retry policy. A cold start of the actor can take a while, so the shim tries again after a refused
+# connection, a reset before the request, a 502, a 503, a 504 and a try that runs out of time. 0 turns
+# the retries off. timeoutSeconds is the time for all tries together. It must hold every try and up to
+# 5 seconds of back-off between them: (retries + 1) x perTryTimeoutSeconds + retries x 5.
+retries: 2
+perTryTimeoutSeconds: 60
+timeoutSeconds: 190
+
+# renovate: datasource=docker depName=envoyproxy/envoy
+image: docker.io/envoyproxy/envoy:v1.40.2@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb
+
+# The ingress router of the control plane. The shim checks its name against the serving certificate.
+router:
+  host: atenet-router.ate-system.svc
+  port: 443
+
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+
+# The from entries of a NetworkPolicy on the shim port. Empty renders no policy. With ingressRoute,
+# add the namespace of Traefik.
+allowFrom: []
+
+# A Traefik route for a sender outside the cluster. The host is a consumer input. With no tlsSecretName,
+# Traefik serves its default certificate.
+ingressRoute:
+  enabled: false
+  host: ""
+  entryPoints: [websecure]
+  tlsSecretName: ""
