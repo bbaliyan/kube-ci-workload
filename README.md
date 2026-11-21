@@ -227,16 +227,16 @@ On a Windows runner with the PowerShell shell, the script is:
 
 #### The gate
 
-The example `examples/pr-agent-review-gate/` makes the job wait for the review and fail the pipeline if the review is not complete. It has the job (`gitlab-ci.yml`), the script (`pr-agent-gate.py`, Python standard library only, so it runs on a Linux and on a Windows runner) with a self-test of the decision logic (`pr-agent-gate-test.sh`, with saved review notes in `fixtures/`).
+The example `examples/pr-agent-review-gate/` makes the job wait for the review and fail the pipeline if the review is not complete. It has the job (`gitlab-ci.yml`), the script (`pr-agent-gate.py`, Python standard library only, so it runs on a Linux and on a Windows runner) with a self-test of the decision logic (`python3 pr-agent-gate.py --self-test`).
 
 The job:
 
 1. Sends the same request as above and records the time.
-2. Polls the notes of the merge request every `PR_AGENT_POLL_SECONDS` (default 20 seconds), for up to `PR_AGENT_WAIT_MINUTES` (default 25 minutes). It looks for a note of the review bot that is newer than the request and contains `PR Reviewer Guide` or `Failed to review PR`. A note that says `Preparing review` is progress and is ignored.
+2. Polls the notes of the merge request every `PR_AGENT_POLL_SECONDS` (default 20 seconds), for up to `PR_AGENT_WAIT_MINUTES` (default 25 minutes). It looks for a note of the review bot that is newer than the request and contains `PR Reviewer Guide` or `Failed to review PR`. A note that says `Preparing review` is progress and is ignored. The time of the request is the `Date` header of the pr-agent answer, so a wrong clock on the runner does not matter. If you changed the review title with the pr-agent setting `review_heading`, set `PR_AGENT_REVIEW_HEADING` to the same text. A warning is only counted when it is on a line that starts with the info or warning sign, so code quoted in a review does not fail the job.
 3. Prints the chunk line and the run details (model, tokens, time cost, AI calls) into the job log.
 4. Fails if the final note says `chunk(s) failed`, `Failed to review PR` or `were not included in this review`. It also fails if no final note appears in time, or if pr-agent refuses the request. Otherwise it passes.
 
-The job reads the notes with the job token (`CI_JOB_TOKEN`). Verify that your GitLab version lets the job token read `GET /projects/:id/merge_requests/:iid/notes`. If it does not, store a project access token with the scope `read_api` and the role Reporter in a masked CI variable, and send it in the `PRIVATE-TOKEN` header instead. `GITLAB_API_URL` must be an address that the job pod can reach.
+The job reads the notes with the job token (`CI_JOB_TOKEN`). Not every GitLab version lets the job token read `GET /projects/:id/merge_requests/:iid/notes`. If yours does not, the job fails at once and prints the HTTP status. In that case store a project access token with the scope `read_api` and the role Reporter in a masked CI variable, and send it in the `PRIVATE-TOKEN` header instead. `GITLAB_API_URL` must be an address that the job pod can reach.
 
 Run `python3 examples/pr-agent-review-gate/pr-agent-gate.py --self-test` to test the logic offline. `make test-scripts` runs it.
 
