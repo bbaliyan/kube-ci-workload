@@ -33,7 +33,14 @@ spec:
           "postgres" (dict
             "resources" (dict "requests" (dict "cpu" "250m" "memory" "512Mi") "limits" (dict "cpu" "2" "memory" "2Gi"))
             "storage" "10Gi") -}}
-        {{- mergeOverwrite $install .Values.substrate.install.helmValues | toYaml | nindent 8 }}
+        {{- if and .Values.prAgent.enabled .Values.prAgent.webhook }}
+        {{- $shim := printf "spiffe://cluster.local/ns/%s/sa/pr-agent-webhook" (required "prAgent.namespace is required when the webhook shim is enabled" .Values.prAgent.namespace) -}}
+        {{- $extra := dig "config" "ingressAllowedSPIFFEIDs" "" .Values.substrate.install.helmValues -}}
+        {{- $_ := set (get $install "config") "ingressAllowedSPIFFEIDs" (ternary $shim (printf "%s,%s" $shim $extra) (eq $extra "")) -}}
+        {{- end }}
+        {{- $consumer := deepCopy .Values.substrate.install.helmValues -}}
+        {{- if hasKey $consumer "config" }}{{- if and .Values.prAgent.enabled .Values.prAgent.webhook }}{{- $_ := unset (get $consumer "config") "ingressAllowedSPIFFEIDs" -}}{{- end }}{{- end }}
+        {{- mergeOverwrite $install $consumer | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: {{ .Values.substrate.namespace }}
