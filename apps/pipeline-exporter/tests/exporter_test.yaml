@@ -28,6 +28,12 @@ tests:
       - matchRegex:
           path: data["config.yml"]
           pattern: "name: mirror"
+  - it: checks readiness against the same GitLab, not the default on the internet
+    template: charts/gitlab-ci-pipelines-exporter/templates/configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.yml"]
+          pattern: "health_url: http://gitlab.gitlab.svc.cluster.local/explore"
   - it: emits a 0 for every status that is not current
     template: charts/gitlab-ci-pipelines-exporter/templates/configmap.yaml
     asserts:
