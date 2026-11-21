@@ -86,7 +86,7 @@ The actor talks to a model server that runs outside the cluster. The consumer se
 6. If the server has a login, create a Secret in `prAgent.namespace` that holds its key.
 7. Set `prAgent.modelApiKeySecret` to the `name` and the `key` of that Secret.
 8. Set `prAgent.contextLength` to the context length of the server, in tokens. The two numbers must be equal.
-9. Set `prAgent.enabled` to `true`. Each comment of pr-agent then ends with a run details section: the model, the tokens, the time cost and the number of model calls. Set `prAgent.runDetails` to `false` to turn it off.
+9. Set `prAgent.enabled` to `true`. Each review, description and suggestion comment of pr-agent then ends with a run details section: the model, the tokens, the time cost and the number of model calls. Set `prAgent.runDetails` to `false` to turn it off.
 10. Sync the bootstrap.
 11. Verify that the Applications `substrate-actors` and `substrate-registration` are Healthy.
 
