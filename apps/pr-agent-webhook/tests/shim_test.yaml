@@ -403,3 +403,179 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "host"
+
+  - it: renders no pipeline route, no token check and no key fetch by default
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data["envoy.yaml"]
+          pattern: "jwt_authn|rbac|gitlab-jwks|/pipeline"
+
+  - it: checks the ID token and its claims on the pipeline route and sends the hop token to /webhook
+    template: templates/shim.yaml
+    set: &pipeline
+      pipeline:
+        enabled: true
+        issuer: https://gitlab.example.com
+        jwksUri: http://gitlab.gitlab.svc.cluster.local/oauth/discovery/keys
+        namespacePaths: [my-group, my-group/sub]
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'match: \{path: "/pipeline"\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "prefix_rewrite: /webhook"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'key: x-gitlab-token, value: "internal-hop-from-the-webhook-shim"'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'key: ate-target-actor, value: "reviews/pr-agent"'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'issuer: "https://gitlab.example.com"'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'audiences: \["pr-agent"\]'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "forward: false"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "require_expiration: true"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'async_fetch: \{failed_refetch_duration: 10s\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'uri: "http://gitlab.gitlab.svc.cluster.local/oauth/discovery/keys"'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'address: "gitlab.gitlab.svc.cluster.local", port_value: 80'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'key: namespace_path\}\]\n\s+value: \{string_match: \{exact: "my-group"\}\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'key: namespace_path\}\]\n\s+value: \{string_match: \{exact: "my-group/sub"\}\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'key: pipeline_source\}\]\n\s+value: \{string_match: \{exact: "merge_request_event"\}\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'LuaPerRoute\n\s+disabled: true'
+
+  - it: keeps the Lua check of the webhook route when the pipeline route is on
+    template: templates/shim.yaml
+    set: *pipeline
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'replace\("x-gitlab-token", "internal-hop-from-the-webhook-shim"\)'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: '- match: \{prefix: /\}'
+
+  - it: fetches the keys over TLS, checks the host name and trusts the CA of the ConfigMap
+    template: templates/shim.yaml
+    set:
+      pipeline:
+        enabled: true
+        issuer: https://gitlab.example.com
+        jwksUri: https://gitlab.example.com:8443/oauth/discovery/keys
+        jwksCa: {name: gitlab-ca, key: root.pem}
+        namespacePaths: [my-group]
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'address: "gitlab.example.com", port_value: 8443'
+        documentIndex: 1
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'trusted_ca: \{filename: "/etc/jwks-ca/ca.pem"\}'
+        documentIndex: 1
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'matcher: \{exact: "gitlab.example.com"\}'
+        documentIndex: 1
+      - contains:
+          path: spec.template.spec.volumes
+          content: {name: jwks-ca, configMap: {name: gitlab-ca, items: [{key: root.pem, path: ca.pem}]}}
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: {name: jwks-ca, mountPath: /etc/jwks-ca, readOnly: true}
+        documentIndex: 2
+
+  - it: uses port 443 and the CA bundle of the image for an https key endpoint without a CA
+    template: templates/shim.yaml
+    set:
+      pipeline:
+        enabled: true
+        issuer: https://gitlab.example.com
+        jwksUri: https://gitlab.example.com/oauth/discovery/keys
+        namespacePaths: [my-group]
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'port_value: 443\}'
+        documentIndex: 1
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'trusted_ca: \{filename: "/etc/ssl/certs/ca-certificates.crt"\}'
+        documentIndex: 1
+      - notContains:
+          path: spec.template.spec.volumes
+          content: {name: jwks-ca}
+          any: true
+        documentIndex: 2
+
+  - it: fails when the pipeline route has no issuer
+    template: templates/shim.yaml
+    set:
+      pipeline: {enabled: true, jwksUri: http://gitlab.example.com/oauth/discovery/keys, namespacePaths: [g]}
+    asserts:
+      - failedTemplate:
+          errorPattern: "needs pipeline.issuer"
+
+  - it: fails when the pipeline route has no key endpoint
+    template: templates/shim.yaml
+    set:
+      pipeline: {enabled: true, issuer: https://gitlab.example.com, namespacePaths: [g]}
+    asserts:
+      - failedTemplate:
+          errorPattern: "needs pipeline.jwksUri"
+
+  - it: fails when the pipeline route allows no group
+    template: templates/shim.yaml
+    set:
+      pipeline: {enabled: true, issuer: https://gitlab.example.com, jwksUri: http://gitlab.example.com/oauth/discovery/keys}
+    asserts:
+      - failedTemplate:
+          errorPattern: "needs pipeline.namespacePaths"
+
+  - it: rejects a pipeline path that hides the webhook route
+    template: templates/shim.yaml
+    set:
+      pipeline: {path: /webhook}
+    asserts:
+      - failedTemplate:
+          errorPattern: "pipeline.path"
+
+  - it: rejects an issuer with a trailing slash, which never equals the iss claim
+    template: templates/shim.yaml
+    set:
+      pipeline: {issuer: https://gitlab.example.com/}
+    asserts:
+      - failedTemplate:
+          errorPattern: "pipeline.issuer"

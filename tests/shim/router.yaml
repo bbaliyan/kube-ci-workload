@@ -1,6 +1,6 @@
 # A stand-in for the ingress router of the control plane. It needs a client
 # certificate, as the router does, and answers 200 with the two headers that
-# the shim sets. Run it with one worker (--concurrency 1), so one counter sees every request.
+# the shim sets, the path and whether an Authorization header arrived. Run it with one worker (--concurrency 1), so one counter sees every request.
 # The test in run.sh sends the shim here.
 #
 # Paths that change the answer:
@@ -82,15 +82,16 @@ static_resources:
                               h:respond({[":status"] = "504"}, "cold start, status 504\n")
                               return
                             end
-                            -- The header map is not valid after a wait, so read the two headers first.
+                            -- The header map is not valid after a wait, so read the headers first.
                             local actor = headers:get("ate-target-actor") or ""
                             local token = headers:get("x-gitlab-token") or ""
+                            local auth = headers:get("authorization") and "present" or "none"
                             local slow = path:match("^/slow/[^/]+/(%d+)$")
                             if slow then
                               wait(h, slow)
                               done[path] = (done[path] or 0) + 1
                             end
-                            h:respond({[":status"] = "200"}, "actor=" .. actor .. " token=" .. token .. "\n")
+                            h:respond({[":status"] = "200"}, "actor=" .. actor .. " token=" .. token .. " path=" .. path .. " auth=" .. auth .. "\n")
                           end
                   - name: envoy.filters.http.router
                     typed_config:

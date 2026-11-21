@@ -151,6 +151,93 @@ The test renders the chart and runs the shim in Docker, as a non-root user on a 
 
 It does not cover the real router, a real pod certificate signer, the certificate rotation of the kubelet, the back-off time or a retry after a refused connection.
 
+For the pipeline route, the test signs ID tokens with a local RSA key pair and serves the public key from a stand-in key endpoint. It verifies that a valid token reaches the actor at `/webhook` with the hop token and without the Authorization header, and that a token of a listed subgroup passes. It verifies that the route refuses a request with no token, with the webhook secret only, with a wrong signature, audience or issuer, an expired token, a token without an expiry time, a token of another group and a token of a branch pipeline. It verifies that a valid token does not open the webhook route, that a key fetch over HTTPS with the CA of `pipeline.jwksCa` works, and that a shim whose key endpoint is down refuses a valid token with a 401. It does not cover a real GitLab or a key rotation.
+
+### Reviews from a pipeline
+
+A CI job can ask for a review without the webhook secret and without a GitLab webhook. The job gets an ID token from GitLab (`id_tokens:`) and sends it to the pipeline route of the shim. GitLab issues the token, so the job can run on any runner, in the cluster or outside it, if the runner can reach the route.
+
+The shim:
+
+- Verifies the signature of the token against the keys of GitLab, and verifies the issuer, the audience and the expiry time. A failed check gets a 401, and a token for another audience gets a 403.
+- Verifies two claims: `namespace_path` must be in `pipeline.namespacePaths`, and `pipeline_source` must be `merge_request_event`. A failed check gets a 403.
+- Removes the token, sets the hop token and `ate-target-actor`, and calls the actor at `/webhook`, with the retries of the webhook route.
+
+The route is off by default. It does not change the webhook route, which still needs `X-Gitlab-Token`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `pipeline.enabled` | `false` | Turns on the route. |
+| `pipeline.path` | `/pipeline` | The path of the route. |
+| `pipeline.issuer` | none | The external URL of GitLab, with no trailing slash. It must equal the `iss` claim. |
+| `pipeline.audiences` | `[pr-agent]` | The `aud` claims that the shim accepts. |
+| `pipeline.jwksUri` | none | The key endpoint: `<GitLab URL>/oauth/discovery/keys`. |
+| `pipeline.jwksCacheSeconds` | `300` | How long the shim keeps the keys. |
+| `pipeline.jwksCa` | `{name: "", key: ca.crt}` | For an https key endpoint: a ConfigMap and key that hold the CA of GitLab. An empty name uses the CA bundle of the Envoy image. |
+| `pipeline.namespacePaths` | `[]` | The full paths of the groups whose pipelines may ask for a review. A subgroup needs its own entry. |
+
+With `prAgent.webhook.pipeline.enabled`, the bootstrap sets the defaults from this GitLab: `gitlab.externalUrl` is the issuer, the key endpoint is under `prAgent.gitlabUrl`, and the mirror group of first-objects is the only group. Values in `prAgent.webhook.pipeline` win over these defaults. A runner outside the cluster also needs `ingressRoute`. If you set `allowFrom`, add the namespace of the in-cluster runner jobs too, or the policy blocks them. A runner outside the cluster comes in through Traefik, so it needs the Traefik entry.
+
+The keys decide which tokens pass, so the shim must get them from the real GitLab. The default key endpoint is the GitLab Service over plain HTTP. It trusts the cluster network, as the other in-cluster calls to GitLab do. For a GitLab outside the cluster, set `pipeline.jwksUri` to its https address. The shim then verifies the certificate against the host name and the CA of `pipeline.jwksCa`, or the CA bundle of the image.
+
+The shim fetches the keys when it starts and again before the cache runs out. If the key endpoint is down, the shim has no keys and refuses every token with a 401. It tries again every 10 seconds. A token must carry an expiry time (`exp`). GitLab always sets it.
+
+#### The job
+
+The job sends a comment event with the command, as GitLab does for a comment. pr-agent 0.50.0 needs these fields: `object_kind` and `event_type` set to `note`, `merge_request.url` and `object_attributes.note`. `user.id` and `user.username` are optional. They name the person who started the pipeline.
+
+A real comment event also has `object_attributes.id`, the ID of the comment. pr-agent puts its start reaction on that comment, and without the ID the command fails. The job has no comment, so it turns the reaction off with `--config.reaction_on_start=` in the command.
+
+The answer is 200 when the actor accepted the event. The review then runs in the actor and appears on the merge request a little later. A failed review does not fail the job.
+
+```yaml
+pr-agent-review:
+  image:
+    name: curlimages/curl:8.11.1
+    entrypoint: [""]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  id_tokens:
+    PR_AGENT_ID_TOKEN:
+      aud: pr-agent
+  script:
+    - >
+      printf '{"object_kind":"note","event_type":"note","user":{"id":%s,"username":"%s"},"merge_request":{"url":"%s/-/merge_requests/%s"},"object_attributes":{"note":"/review --config.reaction_on_start="}}'
+      "$GITLAB_USER_ID" "$GITLAB_USER_LOGIN" "$CI_MERGE_REQUEST_PROJECT_URL" "$CI_MERGE_REQUEST_IID" > event.json
+    - >
+      curl --fail-with-body -sS -m 200 -H "Authorization: Bearer $PR_AGENT_ID_TOKEN"
+      -H "Content-Type: application/json" --data-binary @event.json https://pr-agent.example.com/pipeline
+```
+
+On a Windows runner with the PowerShell shell, the script is:
+
+```yaml
+  script:
+    - |
+      $event = @{
+        object_kind = 'note'; event_type = 'note'
+        user = @{ id = [int]$env:GITLAB_USER_ID; username = $env:GITLAB_USER_LOGIN }
+        merge_request = @{ url = "$env:CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$env:CI_MERGE_REQUEST_IID" }
+        object_attributes = @{ note = '/review --config.reaction_on_start=' }
+      } | ConvertTo-Json -Depth 3
+      Invoke-RestMethod -Method Post -Uri https://pr-agent.example.com/pipeline -TimeoutSec 200 `
+        -ContentType application/json -Headers @{ Authorization = "Bearer $env:PR_AGENT_ID_TOKEN" } -Body $event
+```
+
+#### What a GitLab of your IT department must give
+
+- ID tokens: the `id_tokens` keyword, GitLab 15.7 or later.
+- A key endpoint that the shim can reach: `/oauth/discovery/keys` under the external URL, or under an internal address that serves the same keys. The issuer is always the external URL.
+- CA trust on the shim: if a private CA signs the GitLab certificate, put the CA in a ConfigMap and set `pipeline.jwksCa`.
+- CA trust on the runners: the runners must trust the certificate of the ingress route. Put the CA in the job image, pass it to curl with `--cacert`, or add it to the machine store of a Windows runner.
+- Network: the runners must reach the ingress route, and the shim must reach the key endpoint.
+- The pr-agent token: the actor still reads the merge request with its own GitLab token, so that token must have access to each project.
+
+#### Limits
+
+- The claims bind the request to a group only. The shim does not read the body, so the job controls the whole event. A job in an allowed group can run any pr-agent command, such as `/improve` or `/ask`, with any `--config.*` override that pr-agent accepts in a comment. It can name any merge request that the pr-agent token can read, and any `user` fields. Allow only groups whose CI files you trust.
+- The shim keeps the keys for `jwksCacheSeconds`. After GitLab rotates its keys, a token with a new key can fail until the cache expires.
+
 The `substrate-actor` chart of the pinned `substrate.revision` can still run a shim of its own, with the same names. The bootstrap never gives it a `webhook` block, and the render fails if `prAgent.actorHelmValues` sets one.
 
 ### The GitLab webhook

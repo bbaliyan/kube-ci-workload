@@ -51,3 +51,28 @@ ingressRoute:
   host: ""
   entryPoints: [websecure]
   tlsSecretName: ""
+
+# The pipeline route: a CI job asks for a review with a GitLab ID token in place of the webhook secret. The
+# shim checks the token against the keys of GitLab, then checks two claims: namespace_path must be in
+# namespacePaths and pipeline_source must be merge_request_event. It then sends the hop token to the actor,
+# as the webhook route does. See the README, "Reviews from a pipeline".
+pipeline:
+  enabled: false
+  path: /pipeline
+  # The external URL of GitLab, with no trailing slash. It is the iss claim of the ID tokens.
+  issuer: ""
+  # The aud claims that the shim accepts. The job names one in id_tokens.
+  audiences: [pr-agent]
+  # The key endpoint of GitLab: <GitLab URL>/oauth/discovery/keys. The shim must reach it. The keys decide
+  # which tokens pass, so a plain http address trusts the network path to GitLab. Use it only for a GitLab
+  # Service in the same cluster, and use https for a GitLab outside it.
+  jwksUri: ""
+  jwksCacheSeconds: 300
+  # For an https jwksUri: a ConfigMap that holds the CA of the GitLab certificate. An empty name uses the
+  # CA bundle of the Envoy image.
+  jwksCa:
+    name: ""
+    key: ca.crt
+  # The full paths of the GitLab groups whose pipelines may ask for a review, for example [my-group].
+  # A subgroup needs its own entry.
+  namespacePaths: []
