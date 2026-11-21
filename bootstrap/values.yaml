@@ -134,6 +134,10 @@ prAgent:
   modelApiKeySecret: {}
   # The context length of the model server, in tokens. It must equal the setting on the server.
   contextLength: 16000
+  # pr-agent appends a run details section to each review, description and suggestion comment: the model, the
+  # tokens, the time cost and the number of model calls. It lets you compare reviews across models and settings.
+  # It is a pr-agent setting (config.output_run_details), and it is off in pr-agent itself.
+  runDetails: true
   # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
   # More GitLab addresses that the actor may call, with the same token. GitLab builds the links to the next page of
