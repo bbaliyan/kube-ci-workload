@@ -219,6 +219,7 @@ sourced_metadata:
         issuer: {{ required "pipeline.enabled needs pipeline.issuer, the external URL of GitLab" $p.issuer | quote }}
         audiences: {{ required "pipeline.enabled needs pipeline.audiences" $p.audiences | toJson }}
         forward: false
+        require_expiration: true
         payload_in_metadata: gitlab
         remote_jwks:
           http_uri:
@@ -226,6 +227,8 @@ sourced_metadata:
             cluster: gitlab-jwks
             timeout: 5s
           cache_duration: {{ $p.jwksCacheSeconds | int }}s
+          # Fetch the keys at start and before the cache runs out, not on the first request. Without keys, every token gets a 401.
+          async_fetch: {failed_refetch_duration: 10s}
     requirement_map:
       gitlab: {provider_name: gitlab}
 - name: envoy.filters.http.rbac

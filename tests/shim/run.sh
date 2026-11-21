@@ -19,11 +19,12 @@ port=18080
 wrong_port=18081
 badcert_port=18082
 tls_port=18083
+down_port=18084
 secret=correct-horse-battery
 hop=test-hop-token
 
 cleanup() {
-  docker rm -f "$net-shim" "$net-router" "$net-shim-wrong" "$net-router-wrong" "$net-shim-badcert" "$net-shim-tls" "$net-jwks" >/dev/null 2>&1 || true
+  docker rm -f "$net-shim" "$net-router" "$net-shim-wrong" "$net-router-wrong" "$net-shim-badcert" "$net-shim-tls" "$net-shim-down" "$net-jwks" >/dev/null 2>&1 || true
   docker network rm "$net" "$net-wrong" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
@@ -41,10 +42,12 @@ render() { # key endpoint, extra helm arguments...
 }
 rendered="$(render http://jwks.test:8080/oauth/discovery/keys)"
 rendered_tls="$(render https://jwks.test:8443/oauth/discovery/keys --set pipeline.jwksCa.name=gitlab-ca)"
+# Nothing listens on this port of the key endpoint.
+rendered_down="$(render http://jwks.test:9999/oauth/discovery/keys)"
 image="$(sed -n 's/^ *image: //p' <<<"$rendered")"
 test -n "$image" || { echo "no shim image in the render" >&2; exit 1; }
 
-mkdir -p "$work/config" "$work/config-tls" "$work/secrets" "$work/router-client" "$work/router-certs" "$work/router-certs-wrong" \
+mkdir -p "$work/config" "$work/config-tls" "$work/config-down" "$work/secrets" "$work/router-client" "$work/router-certs" "$work/router-certs-wrong" \
   "$work/router-client-bad" "$work/jwks" "$work/jwks-ca"
 extract() { # render, directory
   local file
@@ -55,6 +58,7 @@ extract() { # render, directory
 }
 extract "$rendered" "$work/config"
 extract "$rendered_tls" "$work/config-tls"
+extract "$rendered_down" "$work/config-down"
 printf '%s' "$secret" >"$work/secrets/WEBHOOK_SECRET"
 
 host=atenet-router.ate-system.svc
@@ -97,11 +101,12 @@ modulus="$(openssl rsa -in "$work/signer.key" -noout -modulus | sed 's/^Modulus=
 n="$(printf '%b' "$(sed 's/../\\x&/g' <<<"$modulus")" | b64url)"
 printf '{"keys":[{"kty":"RSA","kid":"test-key","use":"sig","alg":"RS256","n":"%s","e":"AQAB"}]}' "$n" >"$work/jwks/keys.json"
 now="$(date +%s)"
-token() { # signing key, then optional: audience, issuer, namespace path, pipeline source, expiry time
+token() { # signing key, then optional: audience, issuer, namespace path, pipeline source, expiry time (none: no exp claim)
   local aud="${2:-pr-agent}" iss="${3:-$issuer}" ns="${4:-allowed-group}" source="${5:-merge_request_event}" exp="${6:-$((now + 300))}"
   local header body
+  [ "$exp" = none ] && exp="" || exp=",\"exp\":$exp"
   header="$(printf '{"alg":"RS256","typ":"JWT","kid":"test-key"}' | b64url)"
-  body="$(printf '{"iss":"%s","aud":"%s","namespace_path":"%s","project_path":"%s/app","pipeline_source":"%s","iat":%d,"nbf":%d,"exp":%d}' \
+  body="$(printf '{"iss":"%s","aud":"%s","namespace_path":"%s","project_path":"%s/app","pipeline_source":"%s","iat":%d,"nbf":%d%s}' \
     "$iss" "$aud" "$ns" "$ns" "$source" "$now" "$((now - 10))" "$exp" | b64url)"
   printf '%s.%s.%s' "$header" "$body" "$(printf '%s.%s' "$header" "$body" | openssl dgst -sha256 -sign "$1" -binary | b64url)"
 }
@@ -136,6 +141,9 @@ start_shim "$net-shim-badcert" "$net" "$badcert_port" "$work/router-client-bad"
 # A shim that fetches the keys over HTTPS and trusts the CA of the mounted ConfigMap.
 start_shim "$net-shim-tls" "$net" "$tls_port" "$work/router-client" config-tls
 
+# A shim whose key endpoint does not answer.
+start_shim "$net-shim-down" "$net" "$down_port" "$work/router-client" config-down
+
 failures=0
 check() { # name, expected status, expected body fragment, curl args...
   local name="$1" status="$2" fragment="$3" out code
@@ -150,7 +158,7 @@ check() { # name, expected status, expected body fragment, curl args...
   fi
 }
 
-for ready_port in "$port" "$wrong_port" "$badcert_port" "$tls_port"; do
+for ready_port in "$port" "$wrong_port" "$badcert_port" "$tls_port" "$down_port"; do
   for _ in $(seq 1 30); do
     [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$ready_port/healthz" || true)" = 200 ] && break
     sleep 1
@@ -194,12 +202,17 @@ path=/pipeline check "a token of another issuer is refused" 401 "Jwt issuer is n
   -X POST -H "Authorization: Bearer $(token "$work/signer.key" "" https://other.example.test)" -d '{}'
 path=/pipeline check "an expired token is refused" 401 "Jwt is expired" \
   -X POST -H "Authorization: Bearer $(token "$work/signer.key" "" "" "" "" $((now - 120)))" -d '{}'
+# The token is the valid one without exp. Envoy has no message of its own for it.
+path=/pipeline check "a token without an expiry time is refused" 401 "Jwt verification fails" \
+  -X POST -H "Authorization: Bearer $(token "$work/signer.key" "" "" "" "" none)" -d '{}'
 path=/pipeline check "a token of another group is refused" 403 "RBAC: access denied" \
   -X POST -H "Authorization: Bearer $(token "$work/signer.key" "" "" other-group)" -d '{}'
 path=/pipeline check "a token of a group whose name starts with a listed group is refused" 403 "RBAC: access denied" \
   -X POST -H "Authorization: Bearer $(token "$work/signer.key" "" "" allowed-group-2)" -d '{}'
 path=/pipeline check "a token of a branch pipeline is refused" 403 "RBAC: access denied" \
   -X POST -H "Authorization: Bearer $(token "$work/signer.key" "" "" "" push)" -d '{}'
+path=/pipeline port="$down_port" check "a shim that cannot fetch the keys refuses a valid token" 401 "Jwks remote fetch is failed" \
+  -X POST -H "Authorization: Bearer $(token "$work/signer.key")" -d '{}'
 path=/pipeline port="$tls_port" check "a shim that fetches the keys over HTTPS accepts a valid token" 200 "path=/webhook auth=none" \
   -X POST -H "Authorization: Bearer $(token "$work/signer.key")" -d '{}'
 

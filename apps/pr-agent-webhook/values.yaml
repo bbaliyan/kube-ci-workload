@@ -63,7 +63,9 @@ pipeline:
   issuer: ""
   # The aud claims that the shim accepts. The job names one in id_tokens.
   audiences: [pr-agent]
-  # The key endpoint of GitLab: <GitLab URL>/oauth/discovery/keys. The shim must reach it.
+  # The key endpoint of GitLab: <GitLab URL>/oauth/discovery/keys. The shim must reach it. The keys decide
+  # which tokens pass, so a plain http address trusts the network path to GitLab. Use it only for a GitLab
+  # Service in the same cluster, and use https for a GitLab outside it.
   jwksUri: ""
   jwksCacheSeconds: 300
   # For an https jwksUri: a ConfigMap that holds the CA of the GitLab certificate. An empty name uses the

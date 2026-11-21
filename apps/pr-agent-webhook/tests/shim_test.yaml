@@ -449,6 +449,12 @@ tests:
           pattern: "forward: false"
       - matchRegex:
           path: data["envoy.yaml"]
+          pattern: "require_expiration: true"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'async_fetch: \{failed_refetch_duration: 10s\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
           pattern: 'uri: "http://gitlab.gitlab.svc.cluster.local/oauth/discovery/keys"'
       - matchRegex:
           path: data["envoy.yaml"]
