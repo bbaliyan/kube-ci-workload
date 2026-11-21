@@ -120,7 +120,8 @@ prAgent:
   # and WEBHOOK_SECRET) and the key Secret of the model server. first-objects makes the namespace and is its only
   # owner. The credential provider may read Secrets of this namespace only. Do not use a namespace of Substrate.
   namespace: pr-agent
-  # The gitlab_webhook image of pr-agent. Pin the tag and the digest.
+  # The gitlab_webhook image of pr-agent. Pin the tag and the digest. The actor replaces the CMD of the image to keep
+  # GitLab page links on gitlabUrl (bootstrap/templates/_helpers.tpl). If a new release changes the CMD, change it there.
   # renovate: datasource=docker depName=pragent/pr-agent versioning=docker
   image: pragent/pr-agent:0.50.0-gitlab_webhook@sha256:dd10e3f8f5079b42e54e46c231932d28d5d48084337998e04fe7acf667d70840
   # The model, as the model name of pr-agent: a provider prefix and a name. The prefix must be ollama or openai
@@ -152,10 +153,8 @@ prAgent:
   modelTimeoutSeconds: 600
   # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
-  # More GitLab addresses that the actor may call, with the same token. GitLab builds the links to the next page of
-  # a long list from its external URL, and python-gitlab follows them. pr-agent has no setting to keep the base URL.
-  # If a review of a large merge request fails on a page link, add the external URL here. An https address needs
-  # egressTrustBundle.
+  # More GitLab addresses that the actor may call, with the same token. Page links do not need this: the actor keeps
+  # them on gitlabUrl. An https address needs egressTrustBundle.
   gitlabExtraUrls: []
   # The webhook shim checks the real webhook secret and sends this fixed value in X-Gitlab-Token. The actor
   # expects the same value in GITLAB__SHARED_SECRET. It is public and is not the webhook secret.
