@@ -67,6 +67,10 @@
   "GITLAB__SHARED_SECRET" $p.hopToken -}}
 {{- $_ := set $env $provider.base $p.modelEndpoint -}}
 {{- if $p.runDetails }}{{ $_ := set $env "CONFIG__OUTPUT_RUN_DETAILS" "true" }}{{ end -}}
+{{- if $p.largeReviews }}
+{{- $_ := set $env "PR_REVIEWER__ENABLE_LARGE_PR_CHUNKING" "true" -}}
+{{- $_ := set $env "PR_REVIEWER__MAX_NUMBER_OF_CALLS" ($p.maxReviewCalls | toString) -}}
+{{- end -}}
 {{- /* The egress gateway ends TLS and starts it again, so the actor must trust the gateway CA for every https rule. */ -}}
 {{- $https := or (eq $model.protocol "https") $gitlabHttps -}}
 {{- if and $https (not $p.egressTrustBundle) }}{{ fail "prAgent uses an https address (prAgent.gitlabUrl, prAgent.gitlabExtraUrls or prAgent.modelEndpoint), so the actor must trust the egress gateway CA. The pinned substrate-actor chart cannot mount that trust bundle yet. Use an http address, or pin a substrate.revision whose chart accepts egressTrustBundle and set prAgent.egressTrustBundle to true." }}{{ end -}}

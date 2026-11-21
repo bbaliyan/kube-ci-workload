@@ -138,6 +138,12 @@ prAgent:
   # tokens, the time cost and the number of model calls. It lets you compare reviews across models and settings.
   # It is a pr-agent setting (config.output_run_details), and it is off in pr-agent itself.
   runDetails: true
+  # A review of a diff that does not fit the context (prAgent.contextLength) is split into chunks, one model call
+  # each, and the results are merged into one review. A diff that fits is reviewed in one call. Nothing else to
+  # tune: the chunk size follows contextLength. maxReviewCalls only caps the calls of one review: files beyond it
+  # are listed as not reviewed in the review. Set largeReviews to false to review only what fits in one call.
+  largeReviews: true
+  maxReviewCalls: 20
   # The GitLab address the actor uses. The egress policy allows its host and sets the token there.
   gitlabUrl: http://gitlab.gitlab.svc.cluster.local
   # More GitLab addresses that the actor may call, with the same token. GitLab builds the links to the next page of

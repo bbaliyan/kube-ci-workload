@@ -87,6 +87,7 @@ The actor talks to a model server that runs outside the cluster. The consumer se
 7. Set `prAgent.modelApiKeySecret` to the `name` and the `key` of that Secret.
 8. Set `prAgent.contextLength` to the context length of the server, in tokens. The two numbers must be equal.
 9. Set `prAgent.enabled` to `true`. Each review, description and suggestion comment of pr-agent then ends with a run details section: the model, the tokens, the time cost and the number of model calls. Set `prAgent.runDetails` to `false` to turn it off.
+   A diff that does not fit in `prAgent.contextLength` is reviewed in chunks, one model call each, and the results are merged into one review. A diff that fits takes one call. The chunk size follows `contextLength`, so there is nothing else to tune. `prAgent.maxReviewCalls` (default 20) caps the calls of one review, and the review lists the files it did not reach. Set `prAgent.largeReviews` to `false` to review only what fits in one call.
 10. Sync the bootstrap.
 11. Verify that the Applications `substrate-actors` and `substrate-registration` are Healthy.
 
