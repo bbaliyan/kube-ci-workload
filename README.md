@@ -134,6 +134,23 @@ To turn on the shim, set `prAgent.webhook`. Its keys are values of `apps/pr-agen
 
 If you set `allowFrom` and `ingressRoute`, add the namespace of Traefik to `allowFrom`.
 
+The real secret stays in the Secret. The pod mounts it as a file, and the shim reads the file on every request, so a new value takes effect after the kubelet refreshes the mount. An empty file or a file of white space only refuses every request. The hop token is public. The router allow-list guards the last hop, not the hop token.
+
+#### Start, resume and lost deliveries
+
+- A new actor starts suspended, and its first start takes about 15 seconds. A later resume is fast. While the router starts an actor, it can answer 502 or 504.
+- A retry after a 502 or a 504 can deliver one webhook twice, and a cold start makes that likely. A second review is a smaller loss than a lost review.
+- The shim stops its request when the sender leaves. If GitLab gives up before the router answers, the delivery is lost. GitLab.com documents a webhook timeout of 10 seconds. On a self-managed GitLab, raise `gitlab_rails['webhook_timeout']` above `timeoutSeconds`.
+- GitLab counts failed deliveries. After four failures in a row, it disables the webhook for a while. After 40, it disables it for good.
+- The probes use `/healthz`, which the shim answers itself. A pod with a broken client certificate is still Ready, and the first delivery shows the fault as a 503.
+- The shim runs one pod with no PodDisruptionBudget. A node drain stops it for a short time.
+
+#### What `make test-shim` verifies
+
+The test renders the chart and runs the shim in Docker, as a non-root user on a read-only file system, against a stand-in router that needs a client certificate. It verifies the token rules (a missing, wrong, extended or empty token, and an empty, blank, rotated or missing secret file), the hop token and the target header, the retries after a 502, a 504 and a try that runs out of time, a sender that leaves early, a router certificate for another name and a client certificate from an unknown CA.
+
+It does not cover the real router, a real pod certificate signer, the certificate rotation of the kubelet, the back-off time or a retry after a refused connection.
+
 The `substrate-actor` chart of the pinned `substrate.revision` can still run a shim of its own, with the same names. The bootstrap never gives it a `webhook` block, and the render fails if `prAgent.actorHelmValues` sets one.
 
 ### The GitLab webhook
