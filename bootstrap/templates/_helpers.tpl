@@ -53,8 +53,9 @@
   "protocol" $model.protocol
   "hostnames" (list $model.host)
   "ports" (list $model.port) -}}
+{{- /* The router reaches an actor on port 80 and ignores the Host port, so the app must listen there. */ -}}
 {{- $env := dict
-  "PORT" "3000"
+  "PORT" "80"
   "CONFIG__GIT_PROVIDER" "gitlab"
   "CONFIG__MODEL" $p.model
   "CONFIG__FALLBACK_MODELS" "[]"
@@ -89,7 +90,7 @@
   "image" $p.image
   "env" $env
   "resources" (dict "cpuMillicores" $p.cpuMillicores "memoryBytes" $p.memoryBytes)
-  "wakeupProbe" (dict "path" "/" "port" 3000)
+  "wakeupProbe" (dict "path" "/" "port" 80)
   "egress" (append $gitlabRules $modelRule) -}}
 {{- if $https }}{{ $_ := set $actor "egressTrustBundle" true }}{{ end -}}
 {{- /* The webhook shim checks the real secret and sends the hop token, which is the secret that the actor expects. */ -}}
