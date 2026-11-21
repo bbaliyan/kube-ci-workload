@@ -60,6 +60,7 @@
   "CONFIG__MODEL" $p.model
   "CONFIG__FALLBACK_MODELS" "[]"
   "CONFIG__CUSTOM_MODEL_MAX_TOKENS" ($p.contextLength | toString)
+  "CONFIG__MAX_MODEL_TOKENS" ($p.contextLength | toString)
   "CONFIG__DUPLICATE_PROMPT_EXAMPLES" "true"
   "GITLAB__URL" $p.gitlabUrl
   "GITLAB__AUTH_TYPE" "oauth_token"
