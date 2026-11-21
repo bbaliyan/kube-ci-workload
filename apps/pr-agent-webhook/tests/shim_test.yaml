@@ -1,0 +1,405 @@
+suite: pr-agent webhook shim
+templates:
+  - templates/shim.yaml
+  - templates/networkpolicy.yaml
+  - templates/ingressroute.yaml
+tests:
+  - it: renders a service account, a config map, a deployment and a service, named after the actor
+    template: templates/shim.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+      - containsDocument: {kind: ServiceAccount, apiVersion: v1, name: pr-agent-webhook}
+        documentIndex: 0
+      - containsDocument: {kind: Service, apiVersion: v1, name: pr-agent-webhook}
+        documentIndex: 3
+
+  - it: renders no network policy and no route by default
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/networkpolicy.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/ingressroute.yaml
+
+  - it: runs the pinned Envoy image as a non-root user on a read-only file system, with no API token
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^docker.io/envoyproxy/envoy:v[0-9.]+@sha256:[a-f0-9]{64}$"
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: pr-agent-webhook
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: holds no secret value in the pod and mounts the key WEBHOOK_SECRET of gitlab-pr-agent as a file
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+      - equal:
+          path: spec.template.spec.volumes[1].secret.secretName
+          value: gitlab-pr-agent
+      - equal:
+          path: spec.template.spec.volumes[1].secret.items[0].key
+          value: WEBHOOK_SECRET
+      - equal:
+          path: spec.template.spec.volumes[1].secret.items[0].path
+          value: WEBHOOK_SECRET
+
+  - it: reads the Secret and the key that the values name
+    template: templates/shim.yaml
+    set:
+      secret: {name: hook, key: token}
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[1].secret.secretName
+          value: hook
+      - equal:
+          path: spec.template.spec.volumes[1].secret.items[0].key
+          value: token
+
+  - it: presents the pod identity certificate and trusts the router CA
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[2].projected.sources[0].podCertificate.signerName
+          value: podidentity.podcert.ate.dev/identity
+      - equal:
+          path: spec.template.spec.volumes[2].projected.sources[1].clusterTrustBundle.signerName
+          value: servicedns.podcert.ate.dev/identity
+
+  - it: restarts the pod when the config changes
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: "^[a-f0-9]{64}$"
+
+  - it: checks the token, sets the target actor and sends the hop token
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'replace\("ate-target-actor", "reviews/pr-agent"\)'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'replace\("x-gitlab-token", "internal-hop-from-the-webhook-shim"\)'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'io.open\("/secrets/WEBHOOK_SECRET", "rb"\)'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'respond\(\{\[":status"\] = "401"\}'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'get\("x-gitlab-token"\)'
+
+  - it: takes the actor and the hop token from the values
+    template: templates/shim.yaml
+    set:
+      actor: {atespace: other, name: bot}
+      hopToken: my-own-hop-token
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'replace\("x-gitlab-token", "my-own-hop-token"\)'
+        documentIndex: 1
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'replace\("ate-target-actor", "other/bot"\)'
+        documentIndex: 1
+      - containsDocument: {kind: ServiceAccount, apiVersion: v1, name: bot-webhook}
+        documentIndex: 0
+
+  - it: removes trailing white space from the secret file before the compare
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'gsub\("%s\+\$", ""\)'
+
+  - it: retries a refused connection, a 502, a 503, a 504 and a try that runs out of time
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'retry_on: "connect-failure,refused-stream,reset-before-request,gateway-error"'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "num_retries: 2"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "per_try_timeout: 60s"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'retry_back_off: \{base_interval: 0.5s, max_interval: 5s\}'
+
+  - it: waits 190 seconds for the router by default
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "timeout: 190s"
+
+  - it: takes the tries and the time of a try from the values
+    template: templates/shim.yaml
+    set:
+      retries: 1
+      perTryTimeoutSeconds: 9
+      timeoutSeconds: 30
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "num_retries: 1"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "per_try_timeout: 9s"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "timeout: 30s"
+
+  - it: renders no retry policy when retries is 0
+    template: templates/shim.yaml
+    set:
+      retries: 0
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data["envoy.yaml"]
+          pattern: "retry_policy|num_retries"
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "timeout: 190s"
+
+  - it: fails when the total time is too short for the tries and the back-off
+    template: templates/shim.yaml
+    set:
+      timeoutSeconds: 180
+    asserts:
+      - failedTemplate:
+          errorPattern: 'timeoutSeconds \(180\) is too short'
+
+  - it: accepts the shortest total time that holds the tries and the back-off
+    template: templates/shim.yaml
+    set:
+      retries: 1
+      perTryTimeoutSeconds: 10
+      timeoutSeconds: 25
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "timeout: 25s"
+
+  - it: sends accepted requests to the router over TLS and checks its name
+    template: templates/shim.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'address: "atenet-router.ate-system.svc", port_value: 443'
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'sni: "atenet-router.ate-system.svc"'
+      - matchRegex:
+          path: data["sds-ca.yaml"]
+          pattern: 'exact: "atenet-router.ate-system.svc"'
+      - matchRegex:
+          path: data["sds-client.yaml"]
+          pattern: "watched_directory"
+
+  - it: takes the router address from the values
+    template: templates/shim.yaml
+    set:
+      router: {host: router.other.svc, port: 8443}
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: 'address: "router.other.svc", port_value: 8443'
+
+  - it: listens and serves on the port of the values
+    template: templates/shim.yaml
+    set:
+      port: 9090
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 9090
+        documentIndex: 3
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 9090
+        documentIndex: 2
+      - matchRegex:
+          path: data["envoy.yaml"]
+          pattern: "port_value: 9090"
+        documentIndex: 1
+
+  - it: renders the network policy from allowFrom on the shim port
+    template: templates/networkpolicy.yaml
+    set:
+      allowFrom:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gitlab}}
+        - podSelector: {matchLabels: {app: sender}}
+        - ipBlock: {cidr: 192.0.2.0/24}
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: gitlab
+      - equal:
+          path: spec.ingress[0].from[2].ipBlock.cidr
+          value: 192.0.2.0/24
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress]
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/name"]
+          value: pr-agent-webhook
+
+  - it: rejects an allowFrom entry with an unknown key
+    template: templates/networkpolicy.yaml
+    set:
+      allowFrom:
+        - namespace: traefik
+    asserts:
+      - failedTemplate:
+          errorPattern: "allowFrom"
+
+  - it: rejects an allowFrom ip block without a cidr
+    template: templates/networkpolicy.yaml
+    set:
+      allowFrom:
+        - ipBlock: {except: ["192.0.2.0/25"]}
+    asserts:
+      - failedTemplate:
+          errorPattern: "cidr"
+
+  - it: rejects an image without a digest
+    template: templates/shim.yaml
+    set:
+      image: docker.io/envoyproxy/envoy:v1.40.2
+    asserts:
+      - failedTemplate:
+          errorPattern: "image"
+
+  - it: rejects a hop token that could break the Lua code
+    template: templates/shim.yaml
+    set:
+      hopToken: 'a"); os.exit() --'
+    asserts:
+      - failedTemplate:
+          errorPattern: "hopToken"
+
+  - it: rejects an unknown key, such as the Ingress block of the old shim
+    template: templates/shim.yaml
+    set:
+      ingress: {host: hook.example.test}
+    asserts:
+      - failedTemplate:
+          errorPattern: "ingress"
+
+  - it: routes the host to the shim on the websecure entry point with the default certificate
+    template: templates/ingressroute.yaml
+    set:
+      ingressRoute: {enabled: true, host: hook.example.test}
+    asserts:
+      - isKind:
+          of: IngressRoute
+      - equal:
+          path: spec.entryPoints
+          value: [websecure]
+      - equal:
+          path: spec.routes[0].match
+          value: Host(`hook.example.test`)
+      - equal:
+          path: spec.routes[0].services[0].name
+          value: pr-agent-webhook
+      - equal:
+          path: spec.routes[0].services[0].port
+          value: 8080
+      - equal:
+          path: spec.tls
+          value: {}
+
+  - it: takes the entry points and the TLS Secret from the values
+    template: templates/ingressroute.yaml
+    set:
+      ingressRoute: {enabled: true, host: hook.example.test, entryPoints: [web, other], tlsSecretName: hook-tls}
+    asserts:
+      - equal:
+          path: spec.entryPoints
+          value: [web, other]
+      - equal:
+          path: spec.tls.secretName
+          value: hook-tls
+
+  - it: fails when the route has no host
+    template: templates/ingressroute.yaml
+    set:
+      ingressRoute: {enabled: true}
+    asserts:
+      - failedTemplate:
+          errorPattern: "needs ingressRoute.host"
+
+  - it: rejects a host that could break the route rule
+    template: templates/ingressroute.yaml
+    set:
+      ingressRoute: {enabled: true, host: "a`) || Host(`b"}
+    asserts:
+      - failedTemplate:
+          errorPattern: "host"

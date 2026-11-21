@@ -1,0 +1,33 @@
+{{- if and .Values.prAgent.enabled .Values.prAgent.webhook }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pr-agent-webhook
+  namespace: argocd
+  annotations:
+    # After the install, whose router allow-list names the shim. With the actor that the shim calls.
+    argocd.argoproj.io/sync-wave: "9"
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL | quote }}
+    targetRevision: {{ .Values.revision | quote }}
+    path: apps/pr-agent-webhook
+    helm:
+      valuesObject:
+        {{- /* The actor and the hop token come last, so the shim always sends what the actor expects. */ -}}
+        {{- $p := .Values.prAgent -}}
+        {{- mergeOverwrite (dict) $p.webhook (dict "actor" (dict "atespace" $p.atespace "name" "pr-agent") "hopToken" $p.hopToken) | toYaml | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.prAgent.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 2m
+        maxDuration: 10m
+{{- end }}

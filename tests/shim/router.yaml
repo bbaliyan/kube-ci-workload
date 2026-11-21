@@ -1,0 +1,135 @@
+# A stand-in for the ingress router of the control plane. It needs a client
+# certificate, as the router does, and answers 200 with the two headers that
+# the shim sets. Run it with one worker (--concurrency 1), so one counter sees every request.
+# The test in run.sh sends the shim here.
+#
+# Paths that change the answer:
+#   /status/<code>        answers that status
+#   /cold/<name>/<secs>   the first POST waits <secs> and gets 504, as a router can while it
+#                         starts an actor. Later POSTs get 200 at once.
+#   /slow/<name>/<secs>   every POST waits <secs>, then gets 200. A slow start that succeeds.
+# Counters:
+#   GET /count/<path>     how many POST requests reached the router for this path
+#   GET /done/<path>      how many of them the router answered after the wait. A client that
+#                         disconnects early stops the wait, so this count stays lower.
+static_resources:
+  listeners:
+    - name: router
+      address:
+        socket_address: {address: 0.0.0.0, port_value: 443}
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: {filename: /certs/server.pem}
+                    private_key: {filename: /certs/server.key}
+                validation_context:
+                  trusted_ca: {filename: /certs/ca.pem}
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: router
+                route_config:
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      routes:
+                        - match: {prefix: /}
+                          direct_response: {status: 404}
+                http_filters:
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      default_source_code:
+                        inline_string: |
+                          local posts = {}
+                          local done = {}
+                          local function wait(h, secs)
+                            h:httpCall("sleeper", {
+                              [":method"] = "GET", [":path"] = "/", [":authority"] = "sleeper",
+                              ["x-envoy-fault-delay-request"] = tostring(tonumber(secs) * 1000),
+                            }, "", 60000)
+                          end
+                          function envoy_on_request(h)
+                            local headers = h:headers()
+                            local path = headers:get(":path") or ""
+                            local counted = path:match("^/count(/.*)$")
+                            if counted then
+                              h:respond({[":status"] = "200"}, "count " .. (posts[counted] or 0) .. "\n")
+                              return
+                            end
+                            local finished = path:match("^/done(/.*)$")
+                            if finished then
+                              h:respond({[":status"] = "200"}, "count " .. (done[finished] or 0) .. "\n")
+                              return
+                            end
+                            if headers:get(":method") == "POST" then
+                              posts[path] = (posts[path] or 0) + 1
+                            end
+                            local code = path:match("^/status/(%d+)$")
+                            if code then
+                              h:respond({[":status"] = code}, "status " .. code .. "\n")
+                              return
+                            end
+                            local cold = path:match("^/cold/[^/]+/(%d+)$")
+                            if cold and posts[path] == 1 then
+                              wait(h, cold)
+                              h:respond({[":status"] = "504"}, "cold start, status 504\n")
+                              return
+                            end
+                            -- The header map is not valid after a wait, so read the two headers first.
+                            local actor = headers:get("ate-target-actor") or ""
+                            local token = headers:get("x-gitlab-token") or ""
+                            local slow = path:match("^/slow/[^/]+/(%d+)$")
+                            if slow then
+                              wait(h, slow)
+                              done[path] = (done[path] or 0) + 1
+                            end
+                            h:respond({[":status"] = "200"}, "actor=" .. actor .. " token=" .. token .. "\n")
+                          end
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+    # Only the sleeper serves a delay. The fault filter waits as long as the header says, in milliseconds.
+    - name: sleeper
+      address:
+        socket_address: {address: 127.0.0.1, port_value: 9000}
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: sleeper
+                route_config:
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      routes:
+                        - match: {prefix: /}
+                          direct_response: {status: 200}
+                http_filters:
+                  - name: envoy.filters.http.fault
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+                      delay:
+                        header_delay: {}
+                        percentage: {numerator: 100}
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: sleeper
+      type: STATIC
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: sleeper
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: {address: 127.0.0.1, port_value: 9000}

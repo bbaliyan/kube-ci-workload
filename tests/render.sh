@@ -98,7 +98,7 @@ grep -q 'path: charts/substrate-install' <<<"$out" && grep -q 'profile: s3-compa
 is "the Substrate install uses the in-cluster S3 store, a confined SELinux type and the pinned public repo" "$?" "$out"
 grep -Eq 'targetRevision: "?[0-9a-f]{40}"?$' <<<"$out" && grep -Eq 'digest: sha256:[0-9a-f]{64}' <<<"$out"
 is "the Substrate install pins a commit and an image digest" "$?" "$out"
-shim_args="--set substrate.enabled=true --set prAgent.enabled=true --set prAgent.modelEndpoint=http://model.example.test:11434 --set prAgent.namespace=reviews --set prAgent.webhook.ingress=true --show-only templates/substrate-install.yaml"
+shim_args="--set substrate.enabled=true --set prAgent.enabled=true --set prAgent.modelEndpoint=http://model.example.test:11434 --set prAgent.namespace=reviews --set prAgent.webhook.port=8080 --show-only templates/substrate-install.yaml"
 out="$(helm template b "$repo/bootstrap" $shim_args)"
 grep -q 'ingressAllowedSPIFFEIDs: spiffe://cluster.local/ns/reviews/sa/pr-agent-webhook$' <<<"$out"
 is "the router allow-list holds the webhook shim identity" "$?" "$out"
@@ -233,13 +233,28 @@ is "a null list of extra GitLab addresses is an empty list" "$?" "$out"
 out="$(helm template b "$repo/bootstrap")"
 ! grep -q 'pr-agent' <<<"$out" && grep -q 'system:serviceaccount:substrate-system:substrate-registration' <<<"$out"
 is "with pr-agent off nothing in the render names pr-agent, and the install keeps its registration owner" "$?" "$out"
-! grep -q 'webhook:' <<<"$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
-is "with no shim image the actor has no webhook" "$?"
-out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.webhook.port=8080 --set prAgent.hopToken=custom-hop-token --show-only templates/substrate-actors.yaml)"
-grep -q 'webhook:' <<<"$out" && grep -q 'name: gitlab-pr-agent' <<<"$out" && grep -q 'key: WEBHOOK_SECRET' <<<"$out"
-is "a webhook setting gives the actor a shim that reads the key WEBHOOK_SECRET of the generated Secret" "$?" "$out"
-grep -q 'GITLAB__SHARED_SECRET: custom-hop-token' <<<"$out" && grep -q 'hopToken: custom-hop-token' <<<"$out"
-is "the shim sends the hop token that the actor expects as its shared secret, from one value" "$?" "$out"
+! helm template b "$repo/bootstrap" "${pr_agent[@]}" | grep -q 'name: pr-agent-webhook$'
+is "with no webhook setting there is no shim app" "$?"
+shim=("${pr_agent[@]}" --set prAgent.webhook.port=8080 --set prAgent.hopToken=custom-hop-token)
+out="$(helm template b "$repo/bootstrap" "${shim[@]}" --show-only templates/substrate-actors.yaml)"
+! grep -qE '^ *webhook:' <<<"$out" && grep -q 'GITLAB__SHARED_SECRET: custom-hop-token' <<<"$out"
+is "with the shim on, the actor chart gets no webhook block, so the pinned chart runs no second shim" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${shim[@]}" --show-only templates/pr-agent-webhook.yaml)"
+grep -q 'path: apps/pr-agent-webhook' <<<"$out" && grep -q 'namespace: pr-agent$' <<<"$out" && grep -q 'sync-wave: "9"' <<<"$out" \
+  && grep -q 'hopToken: custom-hop-token' <<<"$out" && grep -q 'atespace: reviews' <<<"$out" && grep -q 'name: pr-agent$' <<<"$out" && grep -q 'port: 8080' <<<"$out"
+is "the shim app syncs with the actor, into its namespace, and sends the hop token that the actor expects" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${shim[@]}" --set prAgent.webhook.hopToken=other-hop-token --show-only templates/pr-agent-webhook.yaml)"
+grep -q 'hopToken: custom-hop-token' <<<"$out"
+is "a webhook setting cannot split the hop token between the shim and the actor" "$?" "$out"
+shim_values="$(helm template b "$repo/bootstrap" "${shim[@]}" --set prAgent.webhook.ingressRoute.enabled=true --set prAgent.webhook.ingressRoute.host=hook.example.test --show-only templates/pr-agent-webhook.yaml \
+  | python3 -c 'import sys, yaml; print(yaml.safe_dump(yaml.safe_load(sys.stdin)["spec"]["source"]["helm"]["valuesObject"]))')"
+out="$(helm template pr-agent-webhook "$repo/apps/pr-agent-webhook" --namespace pr-agent -f - <<<"$shim_values" 2>&1)"
+grep -q 'replace("x-gitlab-token", "custom-hop-token")' <<<"$out" && grep -q 'replace("ate-target-actor", "reviews/pr-agent")' <<<"$out" \
+  && grep -q 'name: pr-agent-webhook$' <<<"$out" && grep -q 'Host(`hook.example.test`)' <<<"$out"
+is "the shim chart accepts what the bootstrap passes, and serves the actor that the router allow-list names" "$?" "$out"
+out="$(helm template b "$repo/bootstrap" "${shim[@]}" --set 'prAgent.actorHelmValues.actors[0].name=pr-agent' --set 'prAgent.actorHelmValues.actors[0].webhook.port=8080' 2>&1)"
+grep -q 'must not set webhook on an actor' <<<"$out"
+is "the actor chart values cannot turn on the shim of the actor chart" "$?" "$out"
 
 webhook_args=("${pr_agent[@]}" --set 'prAgent.webhookProjects={mirror/example-repo,mirror/other}' --set prAgent.webhook.port=8080)
 ! grep -q 'prAgentWebhook' <<<"$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/first-objects.yaml)"
@@ -283,7 +298,7 @@ grep -q 'path: charts/substrate-idle-suspend' <<<"$out" && grep -q 'url: http://
 is "the idle suspend watches the actor and reads the Prometheus of the platform" "$?" "$out"
 
 # The public repo names no host, address or environment. The model endpoint is a consumer value.
-! grep -rEn '(^|[^0-9.])(10\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|\.lan([^A-Za-z]|$)|\.ts\.net' "$repo/bootstrap/values.yaml" "$repo/bootstrap/templates" "$repo/apps/substrate-prereqs" "$repo/apps/first-objects" | grep -v 'git-ci.example.ts.net'
+! grep -rEn '(^|[^0-9.])(10\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|\.lan([^A-Za-z]|$)|\.ts\.net' "$repo/bootstrap/values.yaml" "$repo/bootstrap/templates" "$repo/apps/substrate-prereqs" "$repo/apps/first-objects" "$repo/apps/pr-agent-webhook" | grep -v 'git-ci.example.ts.net'
 is "no private address or LAN name is in the bootstrap values or templates" "$?"
 
 [ "$failures" -eq 0 ] && echo "all render tests passed" || { echo "$failures render test(s) failed"; exit 1; }

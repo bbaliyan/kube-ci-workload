@@ -6,6 +6,8 @@
 #
 # test-integration is not part of test-commit. It installs the apps on a real cluster
 # (KUBECONFIG) and needs kubectl, helm and jq on the PATH.
+#
+# test-shim is not part of test-commit. It needs Docker, so run it on the host, not in the devenv image.
 
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -16,7 +18,7 @@ BASE_REF ?= $(shell git rev-parse --verify --quiet origin/main)
 SCRIPTS := $(shell git ls-files '*.sh') .githooks/pre-commit
 
 .PHONY: test-commit test-fast test-integration hooks lint-scripts lint-yaml \
-	lint-pipelines lint-renovate charts test-charts test-rules test-scripts secrets commit-messages
+	lint-pipelines lint-renovate charts test-charts test-rules test-scripts test-shim secrets commit-messages
 
 test-commit: test-fast lint-scripts lint-yaml lint-pipelines lint-renovate charts test-charts test-rules test-scripts commit-messages
 
@@ -51,7 +53,7 @@ charts:
 
 # What the charts render, as declared tests (helm-unittest).
 test-charts:
-	helm unittest apps/substrate-prereqs apps/object-store-bucket apps/gitlab-runner apps/pipeline-exporter apps/ci-monitoring apps/tailnet-ingresses
+	helm unittest apps/substrate-prereqs apps/pr-agent-webhook apps/object-store-bucket apps/gitlab-runner apps/pipeline-exporter apps/ci-monitoring apps/tailnet-ingresses
 
 # The KPI rules, against made-up series (promtool), and the dashboards as JSON.
 test-rules:
@@ -66,6 +68,10 @@ test-scripts:
 
 test-integration:
 	tests/integration.sh
+
+# The webhook shim of apps/pr-agent-webhook, run in Docker against a stand-in router that needs a client certificate.
+test-shim:
+	bash tests/shim/run.sh
 
 secrets:
 	$(CHECKS)/secrets.sh .

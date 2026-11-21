@@ -1,0 +1,5 @@
+apiVersion: v2
+name: pr-agent-webhook
+description: The GitLab webhook shim of pr-agent - an Envoy that checks the webhook secret and calls the Agent Substrate router over mTLS
+type: application
+version: 0.1.0

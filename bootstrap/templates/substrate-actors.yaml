@@ -18,7 +18,10 @@ spec:
         {{- $actors := dict
           "snapshotStorageLocation" (printf "objectstore://%s" .Values.substrate.bucket)
           "actors" (include "prAgent.actors" . | fromJsonArray) -}}
-        {{- mergeOverwrite $actors .Values.prAgent.actorHelmValues | toYaml | nindent 8 }}
+        {{- $actors = mergeOverwrite $actors .Values.prAgent.actorHelmValues -}}
+        {{- /* The pinned actor chart can still run a shim of its own, with the same names as the pr-agent-webhook app. */ -}}
+        {{- range $actor := $actors.actors }}{{ if hasKey $actor "webhook" }}{{ fail "prAgent.actorHelmValues must not set webhook on an actor: the pr-agent-webhook app runs the shim. Set prAgent.webhook instead." }}{{ end }}{{ end -}}
+        {{- $actors | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: {{ .Values.prAgent.namespace }}
