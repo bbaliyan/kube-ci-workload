@@ -17,7 +17,12 @@ spec:
       valuesObject:
         {{- /* The actor and the hop token come last, so the shim always sends what the actor expects. */ -}}
         {{- $p := .Values.prAgent -}}
-        {{- mergeOverwrite (dict) $p.webhook (dict "actor" (dict "atespace" $p.atespace "name" "pr-agent") "hopToken" $p.hopToken) | toYaml | nindent 8 }}
+        {{- /* The pipeline route defaults to this GitLab: its external URL is the issuer, the actor's GitLab address serves the keys, and the mirror group may ask for reviews. */ -}}
+        {{- $defaults := dict -}}
+        {{- if dig "pipeline" "enabled" false $p.webhook -}}
+        {{- $_ := set $defaults "pipeline" (dict "issuer" (trimSuffix "/" .Values.gitlab.externalUrl) "jwksUri" (printf "%s/oauth/discovery/keys" (trimSuffix "/" $p.gitlabUrl)) "namespacePaths" (list (dig "mirrorGroup" "mirror" .Values.firstObjects.helmValues))) -}}
+        {{- end -}}
+        {{- mergeOverwrite $defaults (deepCopy $p.webhook) (dict "actor" (dict "atespace" $p.atespace "name" "pr-agent") "hopToken" $p.hopToken) | toYaml | nindent 8 }}
   destination:
     server: https://kubernetes.default.svc
     namespace: {{ .Values.prAgent.namespace }}

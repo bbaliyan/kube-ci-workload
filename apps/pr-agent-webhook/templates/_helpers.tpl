@@ -41,18 +41,16 @@ static_resources:
                       routes:
                         - match: {path: /healthz}
                           direct_response: {status: 200, body: {inline_string: ok}}
+{{- if $v.pipeline.enabled }}
+                        {{- include "pr-agent-webhook.pipelineRoute" . | nindent 24 }}
+{{- end }}
                         - match: {prefix: /}
                           route:
-                            cluster: router
-                            timeout: {{ $total }}s
-{{- if $retries }}
-                            retry_policy:
-                              retry_on: "connect-failure,refused-stream,reset-before-request,gateway-error"
-                              num_retries: {{ $retries }}
-                              per_try_timeout: {{ $perTry }}s
-                              retry_back_off: {base_interval: 0.5s, max_interval: 5s}
-{{- end }}
+                            {{- include "pr-agent-webhook.routeAction" . | nindent 28 }}
                 http_filters:
+{{- if $v.pipeline.enabled }}
+                  {{- include "pr-agent-webhook.pipelineFilters" . | nindent 18 }}
+{{- end }}
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
@@ -83,6 +81,9 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
+{{- if $v.pipeline.enabled }}
+    {{- include "pr-agent-webhook.jwksCluster" . | nindent 4 }}
+{{- end }}
     - name: router
       type: STRICT_DNS
       connect_timeout: 5s
@@ -131,6 +132,133 @@ resources:
       match_typed_subject_alt_names:
         - san_type: DNS
           matcher: {exact: {{ .Values.router.host | quote }}}
+{{- end -}}
+
+{{- /* Where the shim sends an accepted request: the router, with the retry policy. */ -}}
+{{- define "pr-agent-webhook.routeAction" -}}
+{{- $retries := .Values.retries | int -}}
+cluster: router
+timeout: {{ .Values.timeoutSeconds | int }}s
+{{- if $retries }}
+retry_policy:
+  retry_on: "connect-failure,refused-stream,reset-before-request,gateway-error"
+  num_retries: {{ $retries }}
+  per_try_timeout: {{ .Values.perTryTimeoutSeconds | int }}s
+  retry_back_off: {base_interval: 0.5s, max_interval: 5s}
+{{- end }}
+{{- end -}}
+
+{{- /* The host, the port and the scheme of pipeline.jwksUri, for the cluster of the key fetch. */ -}}
+{{- define "pr-agent-webhook.jwks" -}}
+{{- $uri := required "pipeline.enabled needs pipeline.jwksUri, the key endpoint of GitLab, for example https://gitlab.example.com/oauth/discovery/keys" .Values.pipeline.jwksUri -}}
+{{- $u := urlParse $uri -}}
+{{- $hostPort := splitList ":" $u.host -}}
+{{- $tls := eq $u.scheme "https" -}}
+{{- $port := ternary (last $hostPort) (ternary "443" "80" $tls) (eq (len $hostPort) 2) -}}
+{{- toJson (dict "host" (first $hostPort) "port" ($port | int) "tls" $tls) -}}
+{{- end -}}
+
+{{- /* The pipeline route. jwt_authn checks the ID token, RBAC checks its claims, and the Lua filter of the webhook route is off. The route sets the hop token and the target actor, and the actor gets the path /webhook. */ -}}
+{{- define "pr-agent-webhook.pipelineRoute" -}}
+{{- $v := .Values -}}
+{{- if not $v.pipeline.namespacePaths -}}
+{{- fail "pipeline.enabled needs pipeline.namespacePaths, the GitLab groups whose pipelines may ask for a review" -}}
+{{- end -}}
+- match: {path: {{ $v.pipeline.path | quote }}}
+  route:
+    {{- include "pr-agent-webhook.routeAction" . | nindent 4 }}
+    prefix_rewrite: /webhook
+  request_headers_to_add:
+    - header: {key: x-gitlab-token, value: {{ $v.hopToken | quote }}}
+      append_action: OVERWRITE_IF_EXISTS_OR_ADD
+    - header: {key: ate-target-actor, value: {{ printf "%s/%s" $v.actor.atespace $v.actor.name | quote }}}
+      append_action: OVERWRITE_IF_EXISTS_OR_ADD
+  typed_per_filter_config:
+    envoy.filters.http.jwt_authn:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.PerRouteConfig
+      requirement_name: gitlab
+    envoy.filters.http.rbac:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+      rbac:
+        rules:
+          action: ALLOW
+          policies:
+            gitlab-claims:
+              permissions: [{any: true}]
+              principals:
+                - and_ids:
+                    ids:
+                      - or_ids:
+                          ids:
+                            {{- range $v.pipeline.namespacePaths }}
+                            - {{ include "pr-agent-webhook.claim" (list "namespace_path" .) | indent 30 | trim }}
+                            {{- end }}
+                      - {{ include "pr-agent-webhook.claim" (list "pipeline_source" "merge_request_event") | indent 24 | trim }}
+    envoy.filters.http.lua:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.LuaPerRoute
+      disabled: true
+{{- end -}}
+
+{{- /* A principal that matches one claim of the checked token. jwt_authn writes the claims to the dynamic metadata under the key gitlab. */ -}}
+{{- define "pr-agent-webhook.claim" -}}
+sourced_metadata:
+  metadata_matcher:
+    filter: envoy.filters.http.jwt_authn
+    path: [{key: gitlab}, {key: {{ index . 0 }}}]
+    value: {string_match: {exact: {{ index . 1 | quote }}}}
+{{- end -}}
+
+{{- /* The filters of the pipeline route. They act only on a route that names them, so the webhook route passes through them as before. With forward false, jwt_authn removes the Authorization header after the check. */ -}}
+{{- define "pr-agent-webhook.pipelineFilters" -}}
+{{- $p := .Values.pipeline -}}
+- name: envoy.filters.http.jwt_authn
+  typed_config:
+    "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+    providers:
+      gitlab:
+        issuer: {{ required "pipeline.enabled needs pipeline.issuer, the external URL of GitLab" $p.issuer | quote }}
+        audiences: {{ required "pipeline.enabled needs pipeline.audiences" $p.audiences | toJson }}
+        forward: false
+        payload_in_metadata: gitlab
+        remote_jwks:
+          http_uri:
+            uri: {{ $p.jwksUri | quote }}
+            cluster: gitlab-jwks
+            timeout: 5s
+          cache_duration: {{ $p.jwksCacheSeconds | int }}s
+    requirement_map:
+      gitlab: {provider_name: gitlab}
+- name: envoy.filters.http.rbac
+  typed_config:
+    "@type": type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+{{- end -}}
+
+{{- /* The cluster of the key fetch. An https endpoint must show a certificate for its host name, signed by the CA of pipeline.jwksCa or by a CA of the image bundle. */ -}}
+{{- define "pr-agent-webhook.jwksCluster" -}}
+{{- $jwks := include "pr-agent-webhook.jwks" . | fromJson -}}
+- name: gitlab-jwks
+  type: STRICT_DNS
+  connect_timeout: 5s
+  load_assignment:
+    cluster_name: gitlab-jwks
+    endpoints:
+      - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address: {address: {{ $jwks.host | quote }}, port_value: {{ $jwks.port }}}
+{{- if $jwks.tls }}
+  transport_socket:
+    name: envoy.transport_sockets.tls
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+      sni: {{ $jwks.host | quote }}
+      common_tls_context:
+        validation_context:
+          trusted_ca: {filename: {{ ternary "/etc/jwks-ca/ca.pem" "/etc/ssl/certs/ca-certificates.crt" (not (empty .Values.pipeline.jwksCa.name)) | quote }}}
+          match_typed_subject_alt_names:
+            - san_type: DNS
+              matcher: {exact: {{ $jwks.host | quote }}}
+{{- end }}
 {{- end -}}
 
 {{- define "pr-agent-webhook.config" -}}

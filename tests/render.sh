@@ -252,6 +252,27 @@ out="$(helm template pr-agent-webhook "$repo/apps/pr-agent-webhook" --namespace 
 grep -q 'replace("x-gitlab-token", "custom-hop-token")' <<<"$out" && grep -q 'replace("ate-target-actor", "reviews/pr-agent")' <<<"$out" \
   && grep -q 'name: pr-agent-webhook$' <<<"$out" && grep -q 'Host(`hook.example.test`)' <<<"$out"
 is "the shim chart accepts what the bootstrap passes, and serves the actor that the router allow-list names" "$?" "$out"
+! grep -q 'pipeline' <<<"$shim_values"
+is "with the pipeline route off, the bootstrap passes no pipeline values" "$?" "$shim_values"
+pipeline_values() { # extra helm arguments...
+  helm template b "$repo/bootstrap" "${shim[@]}" --set gitlab.externalUrl=https://gitlab.example.test/ --set prAgent.webhook.pipeline.enabled=true "$@" \
+    --show-only templates/pr-agent-webhook.yaml | python3 -c 'import sys, yaml; print(yaml.safe_dump(yaml.safe_load(sys.stdin)["spec"]["source"]["helm"]["valuesObject"]))'
+}
+shim_values="$(pipeline_values)"
+out="$(helm template pr-agent-webhook "$repo/apps/pr-agent-webhook" --namespace pr-agent -f - <<<"$shim_values" 2>&1)"
+grep -q 'issuer: "https://gitlab.example.test"' <<<"$out" && grep -q 'uri: "http://gitlab.gitlab.svc.cluster.local/oauth/discovery/keys"' <<<"$out" \
+  && grep -q 'exact: "mirror"' <<<"$out" && grep -q 'replace("x-gitlab-token", "custom-hop-token")' <<<"$out" \
+  && grep -q 'key: x-gitlab-token, value: "custom-hop-token"' <<<"$out"
+is "the pipeline route defaults to the external URL as the issuer, the keys at gitlabUrl and the mirror group" "$?" "$out"
+shim_values="$(pipeline_values --set firstObjects.helmValues.mirrorGroup=mirrors --set prAgent.webhook.pipeline.issuer=https://other.example.test \
+  --set 'prAgent.webhook.pipeline.namespacePaths={team-a,team-b}')"
+out="$(helm template pr-agent-webhook "$repo/apps/pr-agent-webhook" --namespace pr-agent -f - <<<"$shim_values" 2>&1)"
+grep -q 'issuer: "https://other.example.test"' <<<"$out" && grep -q 'exact: "team-a"' <<<"$out" && grep -q 'exact: "team-b"' <<<"$out" \
+  && ! grep -q 'exact: "mirrors"' <<<"$out"
+is "pipeline values of the consumer win over the defaults of the bootstrap" "$?" "$out"
+shim_values="$(pipeline_values --set firstObjects.helmValues.mirrorGroup=mirrors)"
+grep -q -- '- mirrors' <<<"$shim_values"
+is "the default allowed group follows the mirror group of first-objects" "$?" "$shim_values"
 out="$(helm template b "$repo/bootstrap" "${shim[@]}" --set 'prAgent.actorHelmValues.actors[0].name=pr-agent' --set 'prAgent.actorHelmValues.actors[0].webhook.port=8080' 2>&1)"
 grep -q 'must not set webhook on an actor' <<<"$out"
 is "the actor chart values cannot turn on the shim of the actor chart" "$?" "$out"

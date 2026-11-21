@@ -1,5 +1,6 @@
 {{- $name := include "pr-agent-webhook.name" . }}
 {{- $config := include "pr-agent-webhook.config" . | fromJson }}
+{{- $jwksCa := and .Values.pipeline.enabled .Values.pipeline.jwksCa.name }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -72,6 +73,9 @@ spec:
             - {name: secret, mountPath: /secrets, readOnly: true}
             - {name: router-client, mountPath: /run/router-client, readOnly: true}
             - {name: tmp, mountPath: /tmp}
+            {{- if $jwksCa }}
+            - {name: jwks-ca, mountPath: /etc/jwks-ca, readOnly: true}
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -98,6 +102,14 @@ spec:
                   path: router-ca.pem
         - name: tmp
           emptyDir: {}
+        {{- if $jwksCa }}
+        - name: jwks-ca
+          configMap:
+            name: {{ .Values.pipeline.jwksCa.name }}
+            items:
+              - key: {{ .Values.pipeline.jwksCa.key }}
+                path: ca.pem
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

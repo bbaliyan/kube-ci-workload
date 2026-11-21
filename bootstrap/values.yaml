@@ -153,7 +153,8 @@ prAgent:
   # The webhook shim, the app apps/pr-agent-webhook. It checks X-Gitlab-Token against the key WEBHOOK_SECRET of the
   # Secret gitlab-pr-agent and sends hopToken to the actor. Empty means no shim, and GitLab cannot reach the actor.
   # The keys are values of that chart, for example port, allowFrom and ingressRoute. {port: 8080} turns it on
-  # with the defaults.
+  # with the defaults. With pipeline.enabled, the pipeline route defaults to gitlab.externalUrl as the issuer, the key
+  # endpoint at gitlabUrl and the mirror group of first-objects as the only allowed group.
   webhook: {}
   # Project paths that get a GitLab webhook to the shim, for example [mirror/kube-compute]. first-objects makes the
   # webhook (merge request and comment events) and allows webhooks to local addresses in GitLab, an instance-wide

@@ -1,0 +1,38 @@
+# A stand-in for the key endpoint of GitLab. It serves the test key set at every path,
+# over HTTP on port 8080 and over HTTPS on port 8443. The test in run.sh writes the key
+# set and the certificate.
+static_resources:
+  listeners:
+    - name: http
+      address:
+        socket_address: {address: 0.0.0.0, port_value: 8080}
+      filter_chains:
+        - filters: &keys
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: keys
+                route_config:
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      routes:
+                        - match: {prefix: /}
+                          direct_response: {status: 200, body: {filename: /jwks/keys.json}}
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+    - name: https
+      address:
+        socket_address: {address: 0.0.0.0, port_value: 8443}
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: {filename: /jwks/server.pem}
+                    private_key: {filename: /jwks/server.key}
+          filters: *keys
