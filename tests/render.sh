@@ -98,7 +98,7 @@ grep -q 'path: charts/substrate-install' <<<"$out" && grep -q 'profile: s3-compa
 is "the Substrate install uses the in-cluster S3 store, a confined SELinux type and the pinned public repo" "$?" "$out"
 grep -Eq 'targetRevision: "?[0-9a-f]{40}"?$' <<<"$out" && grep -Eq 'digest: sha256:[0-9a-f]{64}' <<<"$out"
 is "the Substrate install pins a commit and an image digest" "$?" "$out"
-shim_args="--set substrate.enabled=true --set prAgent.enabled=true --set prAgent.namespace=reviews --set prAgent.webhook.ingress=true --show-only templates/substrate-install.yaml"
+shim_args="--set substrate.enabled=true --set prAgent.enabled=true --set prAgent.modelEndpoint=http://model.example.test:11434 --set prAgent.namespace=reviews --set prAgent.webhook.ingress=true --show-only templates/substrate-install.yaml"
 out="$(helm template b "$repo/bootstrap" $shim_args)"
 grep -q 'ingressAllowedSPIFFEIDs: spiffe://cluster.local/ns/reviews/sa/pr-agent-webhook$' <<<"$out"
 is "the router allow-list holds the webhook shim identity" "$?" "$out"
