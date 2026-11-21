@@ -101,11 +101,13 @@ substrate:
   install:
     helmValues: {}
   # The gVisor worker pool. Each worker pod needs its cpu and memory free on the general node,
-  # beside the control plane. The chart sets the limits equal to the requests.
+  # beside the control plane. The chart sets the limits equal to the requests. A worker must be larger
+  # than the actor it runs: an actor with the limits of prAgent.cpuMillicores and prAgent.memoryBytes does
+  # not fit on a worker of the same size ("no worker has room for the actor").
   workers:
     replicas: 2
-    cpu: "1"
-    memory: 2Gi
+    cpu: "2"
+    memory: 4Gi
     helmValues: {}
 
 # The pr-agent actor: it reviews merge requests with a model that runs outside the cluster. It is
