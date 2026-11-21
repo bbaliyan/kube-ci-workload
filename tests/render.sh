@@ -176,7 +176,7 @@ out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.runDetai
 ! grep -q 'CONFIG__OUTPUT_RUN_DETAILS' <<<"$out"
 is "prAgent.runDetails false leaves the run details setting out" "$?" "$out"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --show-only templates/substrate-actors.yaml)"
-grep -q 'PR_REVIEWER__ENABLE_LARGE_PR_CHUNKING: "true"' <<<"$out" && grep -q 'PR_REVIEWER__MAX_NUMBER_OF_CALLS: "8"' <<<"$out"
+grep -q 'PR_REVIEWER__ENABLE_LARGE_PR_CHUNKING: "true"' <<<"$out" && grep -q 'PR_REVIEWER__MAX_NUMBER_OF_CALLS: "40"' <<<"$out"
 is "large reviews are chunked by default, with a cap on the calls" "$?" "$out"
 out="$(helm template b "$repo/bootstrap" "${pr_agent[@]}" --set prAgent.largeReviews=false --show-only templates/substrate-actors.yaml)"
 ! grep -q 'PR_REVIEWER__' <<<"$out"
