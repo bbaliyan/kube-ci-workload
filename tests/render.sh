@@ -119,7 +119,7 @@ grep -q 'path: apps/substrate-prereqs' <<<"$out" && grep -q 'CreateNamespace=tru
 is "the Substrate prerequisites sync into the control plane namespace" "$?" "$out"
 
 out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --show-only templates/substrate-workers.yaml)"
-grep -q 'path: charts/substrate-workers' <<<"$out" && grep -q 'type: container_engine_t' <<<"$out" && grep -q 'kube-compute.io/node-group: general' <<<"$out"   && grep -q 'replicas: 2' <<<"$out" && grep -q 'cpu: "1"' <<<"$out" && grep -q 'memory: 2Gi' <<<"$out" && grep -q 'namespace: ate-system' <<<"$out"
+grep -q 'path: charts/substrate-workers' <<<"$out" && grep -q 'type: container_engine_t' <<<"$out" && grep -q 'kube-compute.io/node-group: general' <<<"$out"   && grep -q 'replicas: 2' <<<"$out" && grep -q 'cpu: "2"' <<<"$out" && grep -q 'memory: 4Gi' <<<"$out" && grep -q 'namespace: ate-system' <<<"$out"
 is "the Substrate workers run two gVisor workers on the general node in the control plane namespace" "$?" "$out"
 out="$(helm template b "$repo/bootstrap" --set substrate.enabled=true --set substrate.workers.replicas=4 --set substrate.workers.helmValues.sandboxClass=gvisor --show-only templates/substrate-workers.yaml)"
 grep -q 'replicas: 4' <<<"$out"
