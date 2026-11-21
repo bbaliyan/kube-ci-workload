@@ -142,11 +142,13 @@ prAgent:
   # each, and the results are merged into one review. A diff that fits takes one call. The chunk size follows
   # contextLength, so there is nothing else to tune. The chunk calls of one review run at the same time, and an
   # MR event also starts /describe and /improve, which split large diffs on their own. maxReviewCalls caps the
-  # chunk calls of one review. It is a safety valve against a runaway diff, not a tuning knob: keep it high, so no
-  # file is left out of a review. A diff that needs more calls lists the files it did not reach. One file that is
-  # too large alone is only clipped, in one call. Set largeReviews to false to review only what fits in one call.
+  # chunk calls of one review, and the calls go out at the same time. A diff that needs more calls lists the
+  # files it did not reach. A chunk whose call fails is only counted in the review, its files are not named. One file
+  # that is too large alone is only clipped, in one call. Keep the cap near 20: the calls of an MR event
+  # (these, /describe and /improve) must stay under the request rate of the model server. Set largeReviews to
+  # false to review only what fits in one call.
   largeReviews: true
-  maxReviewCalls: 40
+  maxReviewCalls: 20
   # The seconds that pr-agent waits for one model call before it retries. Raise it for a model server that
   # queues requests, for example a busy hosted model or a local server that handles calls one at a time.
   modelTimeoutSeconds: 600
