@@ -186,4 +186,4 @@ GitLab has required upgrade stops. Move one minor release at a time. Renovate op
 
 ## Checks
 
-`make test-commit` runs every check in the pinned `kube-devenv` image. The KPI rules have tests in `tests/kpis.test.yaml` (promtool), and each chart has declared tests in its `tests/` folder (helm-unittest). It is the `commit` check on GitHub and on the GitLab mirror. `make test-integration` installs the apps on a real cluster (`KUBECONFIG`) and is not part of it.
+`make test-commit` runs every check in the pinned `kube-devenv` image. The KPI rules have tests in `tests/kpis.test.yaml` (promtool), and each chart has declared tests in its `tests/` folder (helm-unittest). It is the `commit` check on GitHub and on the GitLab mirror. `make test-integration` installs the apps on a real cluster (`KUBECONFIG`) and is not part of it. `make test-shim` runs the webhook shim in Docker against a stand-in router that needs a client certificate. It needs Docker on the host, so it is the `shim` check on GitHub and is not part of `test-commit`.
